@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Products Management - ShopHub Admin</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body>
+  <div class="admin-layout">
+    <!-- Sidebar -->
+    <aside class="admin-sidebar">
+      <div class="admin-logo">
+        <i class="fas fa-store"></i>
+        <h2>ShopHub Admin</h2>
+      </div>
+      
+      <nav class="admin-nav">
+        <a href="/admin/dashboard" class="admin-nav-item">
+          <i class="fas fa-chart-line"></i>
+          <span>Dashboard</span>
+        </a>
+        <a href="/admin/orders" class="admin-nav-item">
+          <i class="fas fa-shopping-bag"></i>
+          <span>Orders</span>
+        </a>
+        <a href="/admin/products" class="admin-nav-item active">
+          <i class="fas fa-box"></i>
+          <span>Products</span>
+        </a>
+        <a href="/admin/customers" class="admin-nav-item">
+          <i class="fas fa-users"></i>
+          <span>Customers</span>
+        </a>
+        <a href="/" class="admin-nav-item" target="_blank">
+          <i class="fas fa-external-link-alt"></i>
+          <span>View Store</span>
+        </a>
+        <a href="/admin/logout" class="admin-nav-item logout">
+          <i class="fas fa-sign-out-alt"></i>
+          <span>Logout</span>
+        </a>
+      </nav>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="admin-main">
+      <header class="admin-header">
+        <h1>Products Management</h1>
+        <div class="admin-user">
+          <i class="fas fa-user-shield"></i>
+          <span>Admin</span>
+        </div>
+      </header>
+
+      <!-- Filters and Actions -->
+      <div class="admin-filters">
+        <div class="filter-group">
+          <label>Category:</label>
+          <select id="categoryFilter">
+            <option value="all">All Categories</option>
+            <option value="Electronics">Electronics</option>
+            <option value="Cosmetics">Cosmetics</option>
+            <option value="Fashion">Fashion</option>
+            <option value="Home & Kitchen">Home & Kitchen</option>
+            <option value="Sports">Sports</option>
+            <option value="Books">Books</option>
+          </select>
+        </div>
+
+        <div class="filter-group">
+          <label>Search:</label>
+          <input type="text" id="searchProduct" placeholder="Product name or ID">
+        </div>
+
+        <div class="filter-group" style="display: flex; align-items: flex-end;">
+          <button class="btn btn-primary" id="addProductBtn">
+            <i class="fas fa-plus"></i> Add New Product
+          </button>
+        </div>
+      </div>
+
+      <!-- Products Grid -->
+      <div class="admin-section">
+        <div class="products-grid">
+          <% products.forEach(function(product) { %>
+            <div class="product-admin-card" data-category="<%= product.category %>">
+              <div class="product-admin-image">
+                <img src="<%= product.image %>" alt="<%= product.name %>">
+                <span class="product-category-badge"><%= product.category %></span>
+              </div>
+              <div class="product-admin-info">
+                <h3><%= product.name %></h3>
+                <p class="product-description"><%= product.description %></p>
+                <div class="product-admin-price">
+                  <strong>₹<%= product.price.toLocaleString('en-IN') %></strong>
+                  <span class="product-id">ID: #<%= product.id %></span>
+                </div>
+              </div>
+              <div class="product-admin-actions">
+                <button class="btn-icon btn-edit" data-product-id="<%= product.id %>" title="Edit Product">
+                  <i class="fas fa-edit"></i>
+                </button>
+                <button class="btn-icon btn-delete" data-product-id="<%= product.id %>" title="Delete Product">
+                  <i class="fas fa-trash"></i>
+                </button>
+              </div>
+            </div>
+          <% }); %>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script src="/js/main.js"></script>
+  <script src="/js/admin-products.js"></script>
+</body>
+</html>

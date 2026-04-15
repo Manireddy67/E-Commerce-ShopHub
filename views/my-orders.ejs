@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>My Orders - ShopHub</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+  <%- include('partials/header') %>
+
+  <main>
+    <div class="container" style="padding: 3rem 20px;">
+      <div class="page-title-bar">
+        <h1><i class="fas fa-box"></i> My Orders</h1>
+        <a href="/" class="btn-back"><i class="fas fa-arrow-left"></i> Back to Shop</a>
+      </div>
+
+      <% if (orders.length === 0) { %>
+        <div class="empty-cart" style="text-align:center; padding:4rem 0;">
+          <i class="fas fa-box-open" style="font-size:5rem; color:#ddd; display:block; margin-bottom:1.5rem;"></i>
+          <h2>No orders yet</h2>
+          <p>You haven't placed any orders. Start shopping!</p>
+          <a href="/" class="btn btn-primary" style="margin-top:1.5rem;">Shop Now</a>
+        </div>
+      <% } else { %>
+        <div class="orders-list">
+          <% orders.forEach(order => { %>
+            <div class="order-card">
+              <div class="order-card-header">
+                <div class="order-card-id">
+                  <span class="order-label">Order</span>
+                  <span class="order-num">#<%= order.id %></span>
+                </div>
+                <div class="order-card-date">
+                  <i class="fas fa-calendar"></i>
+                  <%= new Date(order.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) %>
+                </div>
+                <div class="order-card-status">
+                  <span class="status-badge <%= order.status %>"><%= order.status.charAt(0).toUpperCase() + order.status.slice(1) %></span>
+                </div>
+                <div class="order-card-total">
+                  <strong>₹<%= order.total.toLocaleString('en-IN') %></strong>
+                </div>
+              </div>
+
+              <div class="order-card-items">
+                <% order.orderItems.forEach(item => { %>
+                  <div class="order-mini-item">
+                    <img src="<%= item.image %>" alt="<%= item.name %>">
+                    <div class="order-mini-info">
+                      <span class="order-mini-name"><%= item.name %></span>
+                      <span class="order-mini-qty">Qty: <%= item.quantity %></span>
+                    </div>
+                    <span class="order-mini-price">₹<%= (item.price * item.quantity).toLocaleString('en-IN') %></span>
+                  </div>
+                <% }); %>
+              </div>
+
+              <div class="order-card-footer">
+                <div class="order-payment-info">
+                  <i class="fas fa-credit-card"></i>
+                  <span class="payment-badge <%= order.paymentMethod %>"><%= order.paymentMethod.toUpperCase() %></span>
+                </div>
+                <div class="order-address-info">
+                  <i class="fas fa-map-marker-alt"></i>
+                  <%= order.shippingAddress.city %>, <%= order.shippingAddress.state %>
+                </div>
+              </div>
+            </div>
+          <% }); %>
+        </div>
+      <% } %>
+    </div>
+  </main>
+
+  <%- include('partials/footer') %>
+</body>
+</html>

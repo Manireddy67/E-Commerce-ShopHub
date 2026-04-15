@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin Dashboard - ShopHub</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body>
+  <div class="admin-layout">
+    <!-- Sidebar -->
+    <aside class="admin-sidebar">
+      <div class="admin-logo">
+        <i class="fas fa-store"></i>
+        <h2>ShopHub Admin</h2>
+      </div>
+      
+      <nav class="admin-nav">
+        <a href="/admin/dashboard" class="admin-nav-item active">
+          <i class="fas fa-chart-line"></i>
+          <span>Dashboard</span>
+        </a>
+        <a href="/admin/orders" class="admin-nav-item">
+          <i class="fas fa-shopping-bag"></i>
+          <span>Orders</span>
+        </a>
+        <a href="/admin/products" class="admin-nav-item">
+          <i class="fas fa-box"></i>
+          <span>Products</span>
+        </a>
+        <a href="/" class="admin-nav-item" target="_blank">
+          <i class="fas fa-external-link-alt"></i>
+          <span>View Store</span>
+        </a>
+        <a href="/admin/logout" class="admin-nav-item logout">
+          <i class="fas fa-sign-out-alt"></i>
+          <span>Logout</span>
+        </a>
+      </nav>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="admin-main">
+      <header class="admin-header">
+        <h1>Dashboard Overview</h1>
+        <div class="admin-user">
+          <i class="fas fa-user-shield"></i>
+          <span>Admin</span>
+        </div>
+      </header>
+
+      <!-- Stats Cards -->
+      <div class="admin-stats">
+        <div class="stat-card">
+          <div class="stat-icon" style="background: #4CAF50;">
+            <i class="fas fa-shopping-cart"></i>
+          </div>
+          <div class="stat-info">
+            <h3><%= stats.totalOrders %></h3>
+            <p>Total Orders</p>
+          </div>
+        </div>
+
+        <div class="stat-card">
+          <div class="stat-icon" style="background: #2196F3;">
+            <i class="fas fa-rupee-sign"></i>
+          </div>
+          <div class="stat-info">
+            <h3>₹<%= stats.totalRevenue.toLocaleString('en-IN') %></h3>
+            <p>Total Revenue</p>
+          </div>
+        </div>
+
+        <div class="stat-card">
+          <div class="stat-icon" style="background: #FF9800;">
+            <i class="fas fa-users"></i>
+          </div>
+          <div class="stat-info">
+            <h3><%= stats.totalCustomers %></h3>
+            <p>Total Customers</p>
+          </div>
+        </div>
+
+        <div class="stat-card">
+          <div class="stat-icon" style="background: #9C27B0;">
+            <i class="fas fa-box"></i>
+          </div>
+          <div class="stat-info">
+            <h3><%= stats.totalProducts %></h3>
+            <p>Total Products</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Recent Orders -->
+      <div class="admin-section">
+        <div class="section-header">
+          <h2><i class="fas fa-clock"></i> Recent Orders</h2>
+          <a href="/admin/orders" class="btn btn-primary">View All Orders</a>
+        </div>
+
+        <div class="admin-table-container">
+          <table class="admin-table">
+            <thead>
+              <tr>
+                <th>Order ID</th>
+                <th>Customer</th>
+                <th>Date</th>
+                <th>Items</th>
+                <th>Total</th>
+                <th>Payment</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              <% if (recentOrders.length === 0) { %>
+                <tr>
+                  <td colspan="7" style="text-align: center; padding: 2rem;">
+                    <i class="fas fa-inbox" style="font-size: 3rem; color: #ccc; display: block; margin-bottom: 1rem;"></i>
+                    No orders yet
+                  </td>
+                </tr>
+              <% } else { %>
+                <% recentOrders.forEach(order => { %>
+                  <tr>
+                    <td><strong>#<%= order.id %></strong></td>
+                    <td><%= order.customerName %></td>
+                    <td><%= new Date(order.date).toLocaleDateString('en-IN') %></td>
+                    <td><%= order.items %> items</td>
+                    <td>₹<%= order.total.toLocaleString('en-IN') %></td>
+                    <td><span class="payment-badge <%= order.paymentMethod %>"><%= order.paymentMethod.toUpperCase() %></span></td>
+                    <td><span class="status-badge <%= order.status %>"><%= order.status %></span></td>
+                  </tr>
+                <% }); %>
+              <% } %>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script src="/js/main.js"></script>
+</body>
+</html>

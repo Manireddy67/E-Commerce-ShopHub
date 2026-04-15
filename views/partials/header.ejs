@@ -1,0 +1,98 @@
+<header>
+  <nav class="navbar">
+    <div class="container nav-container">
+      <a href="/" class="logo">
+        <i class="fas fa-shopping-bag"></i>
+        ShopHub
+      </a>
+
+      <!-- Live Search Bar -->
+      <div class="nav-search">
+        <form action="/" method="GET" class="search-form">
+          <input type="text" name="search" id="navSearchInput" placeholder="Search products..." autocomplete="off" value="">
+          <button type="submit" class="search-btn"><i class="fas fa-search"></i></button>
+        </form>
+        <div class="search-dropdown" id="searchDropdown"></div>
+      </div>
+
+      <div class="nav-links">
+        <a href="/">
+          <i class="fas fa-home"></i>
+          <span class="nav-text">Home</span>
+        </a>
+
+        <% if (user) { %>
+          <a href="/my-orders">
+            <i class="fas fa-box"></i>
+            <span class="nav-text">My Orders</span>
+          </a>
+          <span class="user-name">
+            <i class="fas fa-user-circle"></i>
+            <span class="nav-text">Hi, <%= user.name.split(' ')[0] %></span>
+          </span>
+          <a href="/logout">
+            <i class="fas fa-sign-out-alt"></i>
+            <span class="nav-text">Logout</span>
+          </a>
+        <% } else { %>
+          <a href="/login">
+            <i class="fas fa-sign-in-alt"></i>
+            <span class="nav-text">Login</span>
+          </a>
+          <a href="/register">
+            <i class="fas fa-user-plus"></i>
+            <span class="nav-text">Register</span>
+          </a>
+        <% } %>
+
+        <a href="/cart" class="cart-link">
+          <i class="fas fa-shopping-cart"></i>
+          <span class="cart-text">Cart</span>
+          <span class="cart-count" id="cartCount">0</span>
+        </a>
+      </div>
+    </div>
+  </nav>
+</header>
+
+<script>
+// Live search
+const searchInput = document.getElementById('navSearchInput');
+const dropdown = document.getElementById('searchDropdown');
+let searchTimer;
+
+if (searchInput) {
+  searchInput.addEventListener('input', function() {
+    clearTimeout(searchTimer);
+    const q = this.value.trim();
+    if (q.length < 2) { dropdown.innerHTML = ''; dropdown.style.display = 'none'; return; }
+    searchTimer = setTimeout(() => {
+      fetch('/api/search?q=' + encodeURIComponent(q))
+        .then(r => r.json())
+        .then(results => {
+          if (!results.length) { dropdown.style.display = 'none'; return; }
+          dropdown.innerHTML = results.map(p => `
+            <a href="/product/${p.id}" class="search-result-item">
+              <img src="${p.image}" alt="${p.name}">
+              <div>
+                <div class="sr-name">${p.name}</div>
+                <div class="sr-meta"><span class="sr-cat">${p.category}</span> &bull; ₹${p.price.toLocaleString('en-IN')}</div>
+              </div>
+            </a>
+          `).join('');
+          dropdown.style.display = 'block';
+        });
+    }, 300);
+  });
+
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.nav-search')) { dropdown.style.display = 'none'; }
+  });
+}
+
+// Update cart count from session
+fetch('/cart/count').then(r => r.json()).then(d => {
+  const el = document.getElementById('cartCount');
+  if (el && d.count !== undefined) el.textContent = d.count;
+}).catch(() => {});
+</script>

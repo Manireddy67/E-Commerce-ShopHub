@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ShopHub - Premium Shopping Experience</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+  <%- include('partials/header') %>
+
+  <main>
+
+    <!-- ── HERO ─────────────────────────────────────────────────────────── -->
+    <section class="hero">
+      <div class="hero-bg"></div>
+      <div class="hero-content">
+        <div class="hero-badge">
+          <i class="fas fa-bolt"></i> India's #1 Shopping Destination
+        </div>
+        <h1>Shop Everything<br><span class="highlight">You Love</span></h1>
+        <p>Electronics · Cosmetics · Fashion · Home · Sports · Books<br>All at unbeatable prices with fast delivery.</p>
+        <div class="hero-stats">
+          <div class="stat-item"><span class="stat-number">60+</span><span class="stat-label">Products</span></div>
+          <div class="stat-item"><span class="stat-number">6</span><span class="stat-label">Categories</span></div>
+          <div class="stat-item"><span class="stat-number">24/7</span><span class="stat-label">Support</span></div>
+          <div class="stat-item"><span class="stat-number">Free</span><span class="stat-label">Shipping ₹999+</span></div>
+        </div>
+        <div class="hero-cta">
+          <a href="#categories" class="btn btn-primary btn-hero">
+            <i class="fas fa-shopping-bag"></i> Shop Now
+          </a>
+          <a href="#products" class="btn btn-hero-outline btn-hero">
+            <i class="fas fa-th-large"></i> Browse All
+          </a>
+        </div>
+      </div>
+      <div class="hero-visual">
+        <div class="hero-cards">
+          <div class="hero-card hc1"><i class="fas fa-laptop"></i><span>Electronics</span></div>
+          <div class="hero-card hc2"><i class="fas fa-spa"></i><span>Cosmetics</span></div>
+          <div class="hero-card hc3"><i class="fas fa-tshirt"></i><span>Fashion</span></div>
+          <div class="hero-card hc4"><i class="fas fa-home"></i><span>Home</span></div>
+          <div class="hero-card hc5"><i class="fas fa-dumbbell"></i><span>Sports</span></div>
+          <div class="hero-card hc6"><i class="fas fa-book"></i><span>Books</span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── CATEGORY CARDS ────────────────────────────────────────────────── -->
+    <section id="categories" class="categories-section">
+      <div class="container">
+        <div class="section-header">
+          <h2>Shop by Category</h2>
+          <p>Explore our 6 curated collections</p>
+        </div>
+        <div class="category-cards-grid">
+          <a href="/?category=Electronics" class="cat-card cat-electronics">
+            <div class="cat-icon"><i class="fas fa-laptop"></i></div>
+            <div class="cat-info">
+              <h3>Electronics</h3>
+              <p>Phones, Laptops, Gadgets</p>
+            </div>
+            <span class="cat-count">10 items</span>
+          </a>
+          <a href="/?category=Cosmetics" class="cat-card cat-cosmetics">
+            <div class="cat-icon"><i class="fas fa-spa"></i></div>
+            <div class="cat-info">
+              <h3>Cosmetics</h3>
+              <p>Skincare, Makeup, Beauty</p>
+            </div>
+            <span class="cat-count">10 items</span>
+          </a>
+          <a href="/?category=Fashion" class="cat-card cat-fashion">
+            <div class="cat-icon"><i class="fas fa-tshirt"></i></div>
+            <div class="cat-info">
+              <h3>Fashion</h3>
+              <p>Clothing, Shoes, Accessories</p>
+            </div>
+            <span class="cat-count">10 items</span>
+          </a>
+          <a href="/?category=Home+%26+Kitchen" class="cat-card cat-home">
+            <div class="cat-icon"><i class="fas fa-blender"></i></div>
+            <div class="cat-info">
+              <h3>Home & Kitchen</h3>
+              <p>Appliances, Cookware, Decor</p>
+            </div>
+            <span class="cat-count">10 items</span>
+          </a>
+          <a href="/?category=Sports" class="cat-card cat-sports">
+            <div class="cat-icon"><i class="fas fa-dumbbell"></i></div>
+            <div class="cat-info">
+              <h3>Sports</h3>
+              <p>Fitness, Equipment, Gear</p>
+            </div>
+            <span class="cat-count">10 items</span>
+          </a>
+          <a href="/?category=Books" class="cat-card cat-books">
+            <div class="cat-icon"><i class="fas fa-book-open"></i></div>
+            <div class="cat-info">
+              <h3>Books</h3>
+              <p>Bestsellers, Stationery, Art</p>
+            </div>
+            <span class="cat-count">10 items</span>
+          </a>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── FILTER + SORT BAR ─────────────────────────────────────────────── -->
+    <section id="products" class="products-section">
+      <div class="container">
+        <div class="filter-sort-bar">
+          <form method="GET" action="/" id="filterForm">
+            <% if (search) { %><input type="hidden" name="search" value="<%= search %>"><% } %>
+
+            <div class="filter-tabs">
+              <button type="submit" name="category" value="all"
+                class="filter-tab <%= category === 'all' ? 'active' : '' %>">
+                <i class="fas fa-th-large"></i> All
+              </button>
+              <button type="submit" name="category" value="Electronics"
+                class="filter-tab <%= category === 'Electronics' ? 'active' : '' %>">
+                <i class="fas fa-laptop"></i> Electronics
+              </button>
+              <button type="submit" name="category" value="Cosmetics"
+                class="filter-tab <%= category === 'Cosmetics' ? 'active' : '' %>">
+                <i class="fas fa-spa"></i> Cosmetics
+              </button>
+              <button type="submit" name="category" value="Fashion"
+                class="filter-tab <%= category === 'Fashion' ? 'active' : '' %>">
+                <i class="fas fa-tshirt"></i> Fashion
+              </button>
+              <button type="submit" name="category" value="Home & Kitchen"
+                class="filter-tab <%= category === 'Home & Kitchen' ? 'active' : '' %>">
+                <i class="fas fa-blender"></i> Home
+              </button>
+              <button type="submit" name="category" value="Sports"
+                class="filter-tab <%= category === 'Sports' ? 'active' : '' %>">
+                <i class="fas fa-dumbbell"></i> Sports
+              </button>
+              <button type="submit" name="category" value="Books"
+                class="filter-tab <%= category === 'Books' ? 'active' : '' %>">
+                <i class="fas fa-book"></i> Books
+              </button>
+            </div>
+
+            <div class="sort-select-wrap">
+              <i class="fas fa-sort-amount-down"></i>
+              <select name="sort" onchange="this.form.submit()">
+                <option value="" <%= sort==='' ? 'selected':'' %>>Sort: Default</option>
+                <option value="price-asc"  <%= sort==='price-asc'  ? 'selected':'' %>>Price: Low → High</option>
+                <option value="price-desc" <%= sort==='price-desc' ? 'selected':'' %>>Price: High → Low</option>
+                <option value="name-asc"   <%= sort==='name-asc'   ? 'selected':'' %>>Name: A → Z</option>
+              </select>
+            </div>
+          </form>
+        </div>
+
+        <!-- Search result info -->
+        <% if (search) { %>
+          <div class="search-info-bar">
+            <i class="fas fa-search"></i>
+            <strong><%= products.length %></strong> result(s) for "<strong><%= search %></strong>"
+            <a href="/" class="clear-search"><i class="fas fa-times-circle"></i> Clear</a>
+          </div>
+        <% } %>
+
+        <!-- Section heading -->
+        <div class="products-heading">
+          <h2>
+            <% if (category !== 'all') { %>
+              <%= category %> Products
+            <% } else { %>
+              All Products
+            <% } %>
+          </h2>
+          <span class="product-count"><%= products.length %> items</span>
+        </div>
+
+        <!-- Products Grid -->
+        <div class="products-grid">
+          <% if (products.length === 0) { %>
+            <div class="no-results">
+              <i class="fas fa-search"></i>
+              <h3>No products found</h3>
+              <p>Try a different search or browse all products</p>
+              <a href="/" class="btn btn-primary">View All Products</a>
+            </div>
+          <% } %>
+
+          <% products.forEach(product => { %>
+            <div class="product-card" data-category="<%= product.category %>">
+
+              <div class="product-badge">
+                <% if (product.price < 1000) { %>
+                  <span class="badge badge-hot">Best Deal</span>
+                <% } else if (product.price > 50000) { %>
+                  <span class="badge badge-premium">Premium</span>
+                <% } else { %>
+                  <span class="badge badge-popular">Popular</span>
+                <% } %>
+              </div>
+
+              <a href="/product/<%= product.id %>" class="product-link">
+                <div class="product-image">
+                  <img src="<%= product.image %>" alt="<%= product.name %>" loading="lazy">
+                  <div class="product-overlay">
+                    <div class="overlay-content">
+                      <i class="fas fa-eye"></i><span>Quick View</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="product-info">
+                  <div class="product-category-tag">
+                    <% if (product.category === 'Electronics') { %><i class="fas fa-laptop"></i>
+                    <% } else if (product.category === 'Cosmetics') { %><i class="fas fa-spa"></i>
+                    <% } else if (product.category === 'Fashion') { %><i class="fas fa-tshirt"></i>
+                    <% } else if (product.category === 'Home & Kitchen') { %><i class="fas fa-blender"></i>
+                    <% } else if (product.category === 'Sports') { %><i class="fas fa-dumbbell"></i>
+                    <% } else { %><i class="fas fa-book"></i>
+                    <% } %>
+                    <%= product.category %>
+                  </div>
+                  <h3><%= product.name %></h3>
+                  <div class="product-rating">
+                    <div class="stars">
+                      <i class="fas fa-star"></i><i class="fas fa-star"></i>
+                      <i class="fas fa-star"></i><i class="fas fa-star"></i>
+                      <i class="fas fa-star-half-alt"></i>
+                    </div>
+                    <span class="rating-text">4.5 (128)</span>
+                  </div>
+                  <div class="price-container">
+                    <span class="price">₹<%= product.price.toLocaleString('en-IN') %></span>
+                    <% if (product.price > 5000) { %>
+                      <span class="original-price">₹<%= Math.round(product.price * 1.2).toLocaleString('en-IN') %></span>
+                      <span class="discount">17% OFF</span>
+                    <% } %>
+                  </div>
+                </div>
+              </a>
+
+              <div class="product-actions">
+                <button class="btn-add-cart" data-product-id="<%= product.id %>">
+                  <i class="fas fa-shopping-cart"></i> Add to Cart
+                </button>
+                <button class="btn-wishlist" data-product-id="<%= product.id %>">
+                  <i class="far fa-heart"></i>
+                </button>
+              </div>
+
+            </div>
+          <% }); %>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── TRUST STRIP ───────────────────────────────────────────────────── -->
+    <section class="trust-strip">
+      <div class="container">
+        <div class="trust-strip-grid">
+          <div class="trust-strip-item">
+            <i class="fas fa-shipping-fast"></i>
+            <div><strong>Free Shipping</strong><span>On orders above ₹999</span></div>
+          </div>
+          <div class="trust-strip-item">
+            <i class="fas fa-shield-alt"></i>
+            <div><strong>Secure Payment</strong><span>100% safe & encrypted</span></div>
+          </div>
+          <div class="trust-strip-item">
+            <i class="fas fa-undo-alt"></i>
+            <div><strong>Easy Returns</strong><span>7-day return policy</span></div>
+          </div>
+          <div class="trust-strip-item">
+            <i class="fas fa-headset"></i>
+            <div><strong>24/7 Support</strong><span>Always here to help</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <%- include('partials/footer') %>
+  <script src="/js/main.js"></script>
+</body>
+</html>

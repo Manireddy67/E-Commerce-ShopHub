@@ -1,0 +1,6 @@
+<svg width="500" height="500" xmlns="http://www.w3.org/2000/svg">
+  <rect width="500" height="500" fill="#1e3c72"/>
+  <text x="250" y="220" font-family="Arial" font-size="60" fill="white" text-anchor="middle">🎧</text>
+  <text x="250" y="280" font-family="Arial" font-size="24" fill="white" text-anchor="middle">Headphones</text>
+  <text x="250" y="320" font-family="Arial" font-size="32" font-weight="bold" fill="#ff6b35" text-anchor="middle">$399.99</text>
+</svg>

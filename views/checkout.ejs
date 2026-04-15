@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Checkout - ShopHub</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+  <%- include('partials/header') %>
+
+  <main>
+    <div class="container checkout-page">
+      <div class="page-title-bar">
+        <h1><i class="fas fa-lock"></i> Secure Checkout</h1>
+        <a href="/cart" class="btn-back"><i class="fas fa-arrow-left"></i> Back to Cart</a>
+      </div>
+
+      <div class="checkout-grid">
+
+        <!-- ── ORDER SUMMARY ── -->
+        <div class="order-summary">
+          <h2><i class="fas fa-receipt"></i> Order Summary</h2>
+          <div class="order-items">
+            <% cartItems.forEach(item => { %>
+              <div class="order-item">
+                <img src="<%= item.image %>" alt="<%= item.name %>">
+                <div class="item-details">
+                  <h4><%= item.name %></h4>
+                  <p>Qty: <%= item.quantity %> × ₹<%= item.price.toLocaleString('en-IN') %></p>
+                </div>
+                <div class="item-total">₹<%= (item.price * item.quantity).toLocaleString('en-IN') %></div>
+              </div>
+            <% }); %>
+          </div>
+          <div class="order-totals">
+            <div class="total-row"><span>Subtotal:</span><span>₹<%= subtotal.toLocaleString('en-IN') %></span></div>
+            <div class="total-row"><span>Shipping:</span><span><%= shipping === 0 ? 'Free' : '₹' + shipping %></span></div>
+            <div class="total-row"><span>GST (18%):</span><span>₹<%= tax.toLocaleString('en-IN') %></span></div>
+            <div class="total-row final-total">
+              <span>Total Payable:</span>
+              <span>₹<%= total.toLocaleString('en-IN') %></span>
+            </div>
+          </div>
+          <div class="summary-trust">
+            <span><i class="fas fa-shield-alt"></i> SSL Secured</span>
+            <span><i class="fas fa-undo"></i> 7-Day Returns</span>
+            <span><i class="fas fa-truck"></i> Fast Delivery</span>
+          </div>
+        </div>
+
+        <!-- ── CHECKOUT FORM ── -->
+        <div class="checkout-form">
+          <form id="checkoutForm">
+
+            <!-- Shipping Details -->
+            <div class="form-section">
+              <h3><i class="fas fa-map-marker-alt"></i> Shipping Details</h3>
+              <div class="form-row">
+                <div class="form-group">
+                  <label>First Name *</label>
+                  <input type="text" id="firstName" name="firstName" placeholder="Rahul" required>
+                </div>
+                <div class="form-group">
+                  <label>Last Name *</label>
+                  <input type="text" id="lastName" name="lastName" placeholder="Sharma" required>
+                </div>
+              </div>
+              <div class="form-group">
+                <label>Email Address *</label>
+                <input type="email" id="email" name="email" value="<%= user.email %>" required>
+              </div>
+              <div class="form-group">
+                <label>Phone Number *</label>
+                <input type="tel" id="phone" name="phone" placeholder="10-digit mobile number" maxlength="10" required>
+              </div>
+              <div class="form-group">
+                <label>Street Address *</label>
+                <textarea id="address" name="address" rows="2" placeholder="House/Flat No., Street, Area" required></textarea>
+              </div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label>City *</label>
+                  <input type="text" id="city" name="city" placeholder="Mumbai" required>
+                </div>
+                <div class="form-group">
+                  <label>State *</label>
+                  <select id="state" name="state" required>
+                    <option value="">Select State</option>
+                    <option>Andhra Pradesh</option><option>Arunachal Pradesh</option>
+                    <option>Assam</option><option>Bihar</option><option>Chhattisgarh</option>
+                    <option>Goa</option><option>Gujarat</option><option>Haryana</option>
+                    <option>Himachal Pradesh</option><option>Jharkhand</option>
+                    <option>Karnataka</option><option>Kerala</option>
+                    <option>Madhya Pradesh</option><option>Maharashtra</option>
+                    <option>Manipur</option><option>Meghalaya</option><option>Mizoram</option>
+                    <option>Nagaland</option><option>Odisha</option><option>Punjab</option>
+                    <option>Rajasthan</option><option>Sikkim</option><option>Tamil Nadu</option>
+                    <option>Telangana</option><option>Tripura</option><option>Uttar Pradesh</option>
+                    <option>Uttarakhand</option><option>West Bengal</option><option>Delhi</option>
+                  </select>
+                </div>
+              </div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label>PIN Code *</label>
+                  <input type="text" id="pincode" name="pincode" placeholder="400001" maxlength="6" required>
+                </div>
+                <div class="form-group">
+                  <label>Landmark <span style="color:#aaa;font-weight:400;">(Optional)</span></label>
+                  <input type="text" id="landmark" name="landmark" placeholder="Near metro station">
+                </div>
+              </div>
+            </div>
+
+            <!-- Payment Method Selection -->
+            <div class="form-section">
+              <h3><i class="fas fa-credit-card"></i> Payment Method</h3>
+              <div class="payment-options">
+
+                <div class="payment-option">
+                  <input type="radio" id="cod" name="paymentMethod" value="cod" checked>
+                  <label for="cod">
+                    <i class="fas fa-money-bill-wave" style="color:#27ae60;"></i>
+                    <span>Cash on Delivery</span>
+                    <small>Pay when you receive your order</small>
+                  </label>
+                </div>
+
+                <div class="payment-option">
+                  <input type="radio" id="online" name="paymentMethod" value="online">
+                  <label for="online">
+                    <i class="fas fa-bolt" style="color:#667eea;"></i>
+                    <span>Pay Online</span>
+                    <small>Card · UPI · Net Banking · Wallet</small>
+                  </label>
+                </div>
+
+              </div>
+            </div>
+
+            <!-- Place Order Button -->
+            <div class="form-section">
+              <button type="submit" class="btn btn-primary btn-large btn-place-order" id="placeOrderBtn">
+                <i class="fas fa-lock"></i>
+                Place Order — ₹<%= total.toLocaleString('en-IN') %>
+              </button>
+              <p class="security-note">
+                <i class="fas fa-shield-alt"></i>
+                256-bit SSL encrypted · Your data is safe
+              </p>
+            </div>
+
+          </form>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- ══════════════════════════════════════════════
+       PAYMENT GATEWAY MODAL
+  ══════════════════════════════════════════════ -->
+  <div id="paymentGateway" class="pg-overlay" style="display:none;">
+    <div class="pg-modal">
+
+      <!-- Header -->
+      <div class="pg-header">
+        <div class="pg-brand">
+          <div class="pg-logo"><i class="fas fa-shield-alt"></i></div>
+          <div>
+            <div class="pg-brand-name">ShopHub Pay</div>
+            <div class="pg-brand-sub">Secured by 256-bit SSL</div>
+          </div>
+        </div>
+        <div class="pg-amount-box">
+          <span class="pg-amount-label">Amount to Pay</span>
+          <span class="pg-amount-value" id="pgAmount">₹0</span>
+        </div>
+        <button class="pg-close" id="pgClose"><i class="fas fa-times"></i></button>
+      </div>
+
+      <!-- Payment Tabs -->
+      <div class="pg-tabs" id="pgTabs">
+        <button class="pg-tab active" data-tab="card">
+          <i class="fas fa-credit-card"></i> Card
+        </button>
+        <button class="pg-tab" data-tab="upi">
+          <i class="fas fa-mobile-alt"></i> UPI
+        </button>
+        <button class="pg-tab" data-tab="netbanking">
+          <i class="fas fa-university"></i> Net Banking
+        </button>
+        <button class="pg-tab" data-tab="wallet">
+          <i class="fas fa-wallet"></i> Wallet
+        </button>
+      </div>
+
+      <!-- Tab Content -->
+      <div class="pg-body" id="pgBody">
+
+        <!-- CARD TAB -->
+        <div class="pg-tab-content active" id="tab-card">
+          <div class="pg-form-group">
+            <label>Card Number</label>
+            <div class="pg-input-wrap">
+              <input type="text" id="pgCardNumber" placeholder="1234  5678  9012  3456" maxlength="19">
+              <div class="pg-card-icons">
+                <i class="fab fa-cc-visa"></i>
+                <i class="fab fa-cc-mastercard"></i>
+                <i class="fab fa-cc-rupay" style="font-size:1.1rem;color:#ff6b35;">RuPay</i>
+              </div>
+            </div>
+          </div>
+          <div class="pg-form-group">
+            <label>Cardholder Name</label>
+            <input type="text" id="pgCardName" placeholder="Name as on card">
+          </div>
+          <div class="pg-form-row">
+            <div class="pg-form-group">
+              <label>Expiry Date</label>
+              <input type="text" id="pgExpiry" placeholder="MM / YY" maxlength="7">
+            </div>
+            <div class="pg-form-group">
+              <label>CVV <i class="fas fa-question-circle" style="color:#aaa;font-size:0.8rem;" title="3-digit code on back of card"></i></label>
+              <input type="password" id="pgCvv" placeholder="•••" maxlength="4">
+            </div>
+          </div>
+          <div class="pg-secure-badge">
+            <i class="fas fa-lock"></i> Your card details are encrypted and never stored
+          </div>
+          <button class="pg-pay-btn" id="pgPayCard">
+            <i class="fas fa-lock"></i> Pay ₹<span class="pg-btn-amount">0</span>
+          </button>
+        </div>
+
+        <!-- UPI TAB -->
+        <div class="pg-tab-content" id="tab-upi">
+          <p class="pg-tab-desc">Pay instantly using any UPI app</p>
+          <div class="pg-upi-apps">
+            <button class="pg-upi-app" data-app="PhonePe">
+              <div class="pg-upi-icon" style="background:#5f259f;">
+                <i class="fas fa-mobile-alt"></i>
+              </div>
+              <span>PhonePe</span>
+            </button>
+            <button class="pg-upi-app" data-app="Google Pay">
+              <div class="pg-upi-icon" style="background:#4285f4;">
+                <i class="fab fa-google"></i>
+              </div>
+              <span>Google Pay</span>
+            </button>
+            <button class="pg-upi-app" data-app="Paytm">
+              <div class="pg-upi-icon" style="background:#00baf2;">
+                <i class="fas fa-wallet"></i>
+              </div>
+              <span>Paytm</span>
+            </button>
+            <button class="pg-upi-app" data-app="BHIM">
+              <div class="pg-upi-icon" style="background:#00a651;">
+                <i class="fas fa-rupee-sign"></i>
+              </div>
+              <span>BHIM</span>
+            </button>
+          </div>
+          <div class="pg-divider"><span>OR enter UPI ID</span></div>
+          <div class="pg-form-group">
+            <label>UPI ID</label>
+            <div class="pg-input-wrap">
+              <input type="text" id="pgUpiId" placeholder="yourname@upi">
+              <button class="pg-verify-btn" id="pgVerifyUpi">Verify</button>
+            </div>
+          </div>
+          <div id="pgUpiVerified" class="pg-verified-msg" style="display:none;">
+            <i class="fas fa-check-circle"></i> UPI ID verified successfully
+          </div>
+          <button class="pg-pay-btn" id="pgPayUpi">
+            <i class="fas fa-bolt"></i> Pay ₹<span class="pg-btn-amount">0</span>
+          </button>
+        </div>
+
+        <!-- NET BANKING TAB -->
+        <div class="pg-tab-content" id="tab-netbanking">
+          <p class="pg-tab-desc">Select your bank to continue</p>
+          <div class="pg-banks-grid">
+            <button class="pg-bank-btn" data-bank="SBI">
+              <div class="pg-bank-icon" style="background:#22409a;"><span>SBI</span></div>
+              <span>State Bank</span>
+            </button>
+            <button class="pg-bank-btn" data-bank="HDFC">
+              <div class="pg-bank-icon" style="background:#004c8f;"><span>HDFC</span></div>
+              <span>HDFC Bank</span>
+            </button>
+            <button class="pg-bank-btn" data-bank="ICICI">
+              <div class="pg-bank-icon" style="background:#f7941d;"><span>ICICI</span></div>
+              <span>ICICI Bank</span>
+            </button>
+            <button class="pg-bank-btn" data-bank="Axis">
+              <div class="pg-bank-icon" style="background:#97144d;"><span>AXIS</span></div>
+              <span>Axis Bank</span>
+            </button>
+            <button class="pg-bank-btn" data-bank="Kotak">
+              <div class="pg-bank-icon" style="background:#ed1c24;"><span>KMB</span></div>
+              <span>Kotak Bank</span>
+            </button>
+            <button class="pg-bank-btn" data-bank="PNB">
+              <div class="pg-bank-icon" style="background:#ff6600;"><span>PNB</span></div>
+              <span>Punjab Natl</span>
+            </button>
+          </div>
+          <div id="pgSelectedBank" class="pg-selected-bank" style="display:none;">
+            <i class="fas fa-university"></i>
+            Redirecting to <strong id="pgBankName"></strong> Net Banking...
+          </div>
+          <button class="pg-pay-btn" id="pgPayBank" style="display:none;">
+            <i class="fas fa-university"></i> Pay via Net Banking
+          </button>
+        </div>
+
+        <!-- WALLET TAB -->
+        <div class="pg-tab-content" id="tab-wallet">
+          <p class="pg-tab-desc">Pay using your digital wallet</p>
+          <div class="pg-wallets">
+            <button class="pg-wallet-btn" data-wallet="Paytm Wallet">
+              <div class="pg-wallet-icon" style="background:#00baf2;"><i class="fas fa-wallet"></i></div>
+              <span>Paytm Wallet</span>
+            </button>
+            <button class="pg-wallet-btn" data-wallet="Amazon Pay">
+              <div class="pg-wallet-icon" style="background:#ff9900;"><i class="fab fa-amazon"></i></div>
+              <span>Amazon Pay</span>
+            </button>
+            <button class="pg-wallet-btn" data-wallet="Mobikwik">
+              <div class="pg-wallet-icon" style="background:#56c0e0;"><i class="fas fa-mobile-alt"></i></div>
+              <span>Mobikwik</span>
+            </button>
+            <button class="pg-wallet-btn" data-wallet="Freecharge">
+              <div class="pg-wallet-icon" style="background:#ff5722;"><i class="fas fa-bolt"></i></div>
+              <span>Freecharge</span>
+            </button>
+          </div>
+          <div id="pgSelectedWallet" class="pg-selected-bank" style="display:none;">
+            <i class="fas fa-wallet"></i>
+            Processing <strong id="pgWalletName"></strong> payment...
+          </div>
+          <button class="pg-pay-btn" id="pgPayWallet" style="display:none;">
+            <i class="fas fa-wallet"></i> Pay via Wallet
+          </button>
+        </div>
+
+      </div><!-- /pg-body -->
+
+      <!-- Processing Screen -->
+      <div class="pg-processing" id="pgProcessing" style="display:none;">
+        <div class="pg-processing-inner">
+          <div class="pg-spinner"></div>
+          <h3>Processing Payment...</h3>
+          <p id="pgProcessingMsg">Connecting to payment server</p>
+          <div class="pg-progress-bar"><div class="pg-progress-fill" id="pgProgressFill"></div></div>
+        </div>
+      </div>
+
+      <!-- Success Screen -->
+      <div class="pg-success" id="pgSuccess" style="display:none;">
+        <div class="pg-success-inner">
+          <div class="pg-success-icon"><i class="fas fa-check"></i></div>
+          <h3>Payment Successful!</h3>
+          <p>₹<span id="pgSuccessAmount">0</span> paid successfully</p>
+          <div class="pg-txn-id">Txn ID: <strong id="pgTxnId"></strong></div>
+          <p class="pg-success-sub">Placing your order...</p>
+        </div>
+      </div>
+
+    </div><!-- /pg-modal -->
+  </div><!-- /pg-overlay -->
+
+  <%- include('partials/footer') %>
+
+  <script src="/js/main.js"></script>
+  <script src="/js/checkout.js"></script>
+</body>
+</html>

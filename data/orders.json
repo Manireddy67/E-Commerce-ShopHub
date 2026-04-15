@@ -1,0 +1,76 @@
+[
+  {
+    "id": 1,
+    "userId": 1,
+    "customerName": "Manikanta Reddy",
+    "email": "mani@gmail.com",
+    "phone": "9505386960",
+    "shippingAddress": {
+      "address": "sai nath society , wadgaonsheri\nsrivari building",
+      "city": "pune",
+      "state": "Maharashtra",
+      "pincode": "411014",
+      "landmark": ""
+    },
+    "orderItems": [
+      {
+        "id": 2,
+        "name": "Apple Watch Series 9 GPS",
+        "price": 41900,
+        "image": "https://images.unsplash.com/photo-1579586337278-3befd40fd17a?w=800&q=80",
+        "quantity": 2
+      },
+      {
+        "id": 14,
+        "name": "Decathlon Domyos Cross Trainer",
+        "price": 24999,
+        "image": "https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=800&q=80",
+        "quantity": 1
+      }
+    ],
+    "subtotal": 108799,
+    "shipping": 0,
+    "tax": 19584,
+    "total": 128383,
+    "paymentMethod": "cod",
+    "status": "pending",
+    "date": "2026-04-13T07:58:43.684Z"
+  },
+  {
+    "id": 2,
+    "userId": 1,
+    "customerName": "Manikanta Reddy",
+    "email": "mani@gmail.com",
+    "phone": "9505386960",
+    "shippingAddress": {
+      "address": "sai nath society , wadgaonsheri\nsrivari building",
+      "city": "pune",
+      "state": "Maharashtra",
+      "pincode": "411014",
+      "landmark": ""
+    },
+    "orderItems": [
+      {
+        "id": 1,
+        "name": "Sony WH-1000XM5 Wireless Headphones",
+        "price": 29999,
+        "image": "https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=800&q=80",
+        "quantity": 1
+      },
+      {
+        "id": 2,
+        "name": "Apple Watch Series 9 GPS 45mm",
+        "price": 41900,
+        "image": "https://images.unsplash.com/photo-1579586337278-3befd40fd17a?w=800&q=80",
+        "quantity": 1
+      }
+    ],
+    "subtotal": 71899,
+    "shipping": 0,
+    "tax": 12942,
+    "total": 84841,
+    "paymentMethod": "upi",
+    "status": "pending",
+    "date": "2026-04-15T05:45:30.870Z"
+  }
+]

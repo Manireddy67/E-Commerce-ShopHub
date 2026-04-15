@@ -1,0 +1,3 @@
+Product images will be displayed here.
+For now, gradient backgrounds are used as placeholders.
+You can add your own product images to this folder.

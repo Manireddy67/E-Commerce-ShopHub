@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Orders Management - ShopHub Admin</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body>
+  <div class="admin-layout">
+    <!-- Sidebar -->
+    <aside class="admin-sidebar">
+      <div class="admin-logo">
+        <i class="fas fa-store"></i>
+        <h2>ShopHub Admin</h2>
+      </div>
+      
+      <nav class="admin-nav">
+        <a href="/admin/dashboard" class="admin-nav-item">
+          <i class="fas fa-chart-line"></i>
+          <span>Dashboard</span>
+        </a>
+        <a href="/admin/orders" class="admin-nav-item active">
+          <i class="fas fa-shopping-bag"></i>
+          <span>Orders</span>
+        </a>
+        <a href="/admin/products" class="admin-nav-item">
+          <i class="fas fa-box"></i>
+          <span>Products</span>
+        </a>
+        <a href="/admin/customers" class="admin-nav-item">
+          <i class="fas fa-users"></i>
+          <span>Customers</span>
+        </a>
+        <a href="/" class="admin-nav-item" target="_blank">
+          <i class="fas fa-external-link-alt"></i>
+          <span>View Store</span>
+        </a>
+        <a href="/admin/logout" class="admin-nav-item logout">
+          <i class="fas fa-sign-out-alt"></i>
+          <span>Logout</span>
+        </a>
+      </nav>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="admin-main">
+      <header class="admin-header">
+        <h1>Orders Management</h1>
+        <div class="admin-user">
+          <i class="fas fa-user-shield"></i>
+          <span>Admin</span>
+        </div>
+      </header>
+
+      <!-- Filters -->
+      <div class="admin-filters">
+        <div class="filter-group">
+          <label>Status:</label>
+          <select id="statusFilter">
+            <option value="all">All Orders</option>
+            <option value="pending">Pending</option>
+            <option value="processing">Processing</option>
+            <option value="shipped">Shipped</option>
+            <option value="delivered">Delivered</option>
+            <option value="cancelled">Cancelled</option>
+          </select>
+        </div>
+        
+        <div class="filter-group">
+          <label>Payment:</label>
+          <select id="paymentFilter">
+            <option value="all">All Methods</option>
+            <option value="cod">COD</option>
+            <option value="card">Card</option>
+            <option value="upi">UPI</option>
+            <option value="netbanking">Net Banking</option>
+          </select>
+        </div>
+
+        <div class="filter-group">
+          <label>Search:</label>
+          <input type="text" id="searchOrder" placeholder="Order ID or Customer name">
+        </div>
+      </div>
+
+      <!-- Orders Table -->
+      <div class="admin-section">
+        <div class="admin-table-container">
+          <table class="admin-table">
+            <thead>
+              <tr>
+                <th>Order ID</th>
+                <th>Customer</th>
+                <th>Email</th>
+                <th>Phone</th>
+                <th>Date</th>
+                <th>Items</th>
+                <th>Total</th>
+                <th>Payment</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="ordersTableBody">
+              <% if (orders.length === 0) { %>
+                <tr>
+                  <td colspan="10" style="text-align: center; padding: 3rem;">
+                    <i class="fas fa-inbox" style="font-size: 4rem; color: #ccc; display: block; margin-bottom: 1rem;"></i>
+                    <h3>No orders found</h3>
+                    <p>Orders will appear here once customers place them</p>
+                  </td>
+                </tr>
+              <% } else { %>
+                <% orders.forEach(function(order) { %>
+                  <tr data-status="<%= order.status %>" data-payment="<%= order.paymentMethod %>">
+                    <td><strong>#<%= order.id %></strong></td>
+                    <td><%= order.customerName %></td>
+                    <td><%= order.email %></td>
+                    <td><%= order.phone %></td>
+                    <td><%= new Date(order.date).toLocaleString('en-IN') %></td>
+                    <td><%= order.items %> items</td>
+                    <td><strong>₹<%= order.total.toLocaleString('en-IN') %></strong></td>
+                    <td><span class="payment-badge <%= order.paymentMethod %>"><%= order.paymentMethod.toUpperCase() %></span></td>
+                    <td>
+                      <select class="status-select" data-order-id="<%= order.id %>">
+                        <option value="pending" <% if (order.status === 'pending') { %>selected<% } %>>Pending</option>
+                        <option value="processing" <% if (order.status === 'processing') { %>selected<% } %>>Processing</option>
+                        <option value="shipped" <% if (order.status === 'shipped') { %>selected<% } %>>Shipped</option>
+                        <option value="delivered" <% if (order.status === 'delivered') { %>selected<% } %>>Delivered</option>
+                        <option value="cancelled" <% if (order.status === 'cancelled') { %>selected<% } %>>Cancelled</option>
+                      </select>
+                    </td>
+                    <td>
+                      <button class="btn-icon btn-view-order" data-order-id="<%= order.id %>" title="View Details">
+                        <i class="fas fa-eye"></i>
+                      </button>
+                    </td>
+                  </tr>
+                <% }); %>
+              <% } %>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script src="/js/main.js"></script>
+  <script src="/js/admin.js"></script>
+</body>
+</html>
