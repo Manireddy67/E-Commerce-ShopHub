@@ -2,16 +2,112 @@ const express = require('express');
 const session = require('express-session');
 const bodyParser = require('body-parser');
 const bcrypt = require('bcryptjs');
-const db = require('./db');   // MySQL connection pool
+const fs = require('fs');
+const path = require('path');
 
-// ── Test: callback-style query ───────────────────────────────
-db.query("SELECT * FROM products LIMIT 3", (err, result) => {
-  if (err) {
-    console.log("Query error:", err);
-  } else {
-    console.log(`📦 Sample products loaded: ${result.length} rows`);
+// ── DB with fallback ─────────────────────────────────────────
+let db = null;
+let dbAvailable = false;
+
+try {
+  db = require('./db');
+  db.query('SELECT 1', (err) => {
+    if (err) {
+      console.log('⚠️  MySQL not available — running in file-based mode');
+      dbAvailable = false;
+    } else {
+      console.log('✅ MySQL connected — running in database mode');
+      dbAvailable = true;
+    }
+  });
+} catch (e) {
+  console.log('⚠️  db.js not found — running in file-based mode');
+}
+
+// ── Fallback: load products from local JS file ───────────────
+let localProducts = [];
+try {
+  localProducts = require('./data/products.js');
+  console.log(`📦 Local products loaded: ${localProducts.length}`);
+} catch (e) {
+  console.log('⚠️  data/products.js not found');
+}
+
+// ── Helper: get products (DB or local fallback) ──────────────
+async function getProducts(filters = {}) {
+  if (dbAvailable && db) {
+    try {
+      const { search, sort, category } = filters;
+      let sql = 'SELECT * FROM products WHERE 1=1';
+      const params = [];
+      if (search) {
+        sql += ' AND (name LIKE ? OR category LIKE ? OR description LIKE ?)';
+        const q = `%${search}%`;
+        params.push(q, q, q);
+      }
+      if (category && category !== 'all') {
+        sql += ' AND category = ?';
+        params.push(category);
+      }
+      if (sort === 'price-asc')       sql += ' ORDER BY price ASC';
+      else if (sort === 'price-desc') sql += ' ORDER BY price DESC';
+      else if (sort === 'name-asc')   sql += ' ORDER BY name ASC';
+      else                            sql += ' ORDER BY id ASC';
+      const [rows] = await db.promise().query(sql, params);
+      return rows;
+    } catch (e) {
+      console.error('DB query failed, using local fallback:', e.message);
+    }
   }
-});
+  // Fallback to local products.js
+  let result = [...localProducts];
+  const { search, sort, category } = filters;
+  if (search) {
+    const q = search.toLowerCase();
+    result = result.filter(p =>
+      p.name.toLowerCase().includes(q) ||
+      p.category.toLowerCase().includes(q) ||
+      (p.description || '').toLowerCase().includes(q)
+    );
+  }
+  if (category && category !== 'all') {
+    result = result.filter(p => p.category === category);
+  }
+  if (sort === 'price-asc')       result.sort((a,b) => a.price - b.price);
+  else if (sort === 'price-desc') result.sort((a,b) => b.price - a.price);
+  else if (sort === 'name-asc')   result.sort((a,b) => a.name.localeCompare(b.name));
+  return result;
+}
+
+async function getProductById(id) {
+  if (dbAvailable && db) {
+    try {
+      const [[p]] = await db.promise().query('SELECT * FROM products WHERE id = ?', [id]);
+      return p || null;
+    } catch (e) {}
+  }
+  return localProducts.find(p => p.id === parseInt(id)) || null;
+}
+
+// ── Data helpers (JSON file fallback for users/orders) ───────
+const DATA_DIR = path.join(__dirname, 'data');
+
+function readJSON(file) {
+  try { return JSON.parse(fs.readFileSync(path.join(DATA_DIR, file), 'utf8')); }
+  catch (e) { return []; }
+}
+
+function writeJSON(file, data) {
+  try { fs.writeFileSync(path.join(DATA_DIR, file), JSON.stringify(data, null, 2)); }
+  catch (e) { console.error('writeJSON error:', e.message); }
+}
+
+function getNextId(key) {
+  const counters = readJSON('counter.json') || {};
+  counters[key] = (counters[key] || 0) + 1;
+  writeJSON('counter.json', counters);
+  return counters[key];
+}
 
 const app = express();
 const PORT = 3000;
@@ -43,23 +139,7 @@ function requireAdmin(req, res, next) {
 app.get('/', async (req, res) => {
   try {
     const { search, sort, category } = req.query;
-    let sql = 'SELECT * FROM products WHERE 1=1';
-    const params = [];
-    if (search) {
-      sql += ' AND (name LIKE ? OR category LIKE ? OR description LIKE ?)';
-      const q = `%${search}%`;
-      params.push(q, q, q);
-    }
-    if (category && category !== 'all') {
-      sql += ' AND category = ?';
-      params.push(category);
-    }
-    if (sort === 'price-asc')  sql += ' ORDER BY price ASC';
-    else if (sort === 'price-desc') sql += ' ORDER BY price DESC';
-    else if (sort === 'name-asc')   sql += ' ORDER BY name ASC';
-    else sql += ' ORDER BY id ASC';
-
-    const [products] = await db.promise().query(sql, params);
+    const products = await getProducts({ search, sort, category });
     res.render('index', {
       user: req.session.user,
       products,
@@ -69,19 +149,34 @@ app.get('/', async (req, res) => {
     });
   } catch (err) {
     console.error(err);
-    res.render('index', { user: req.session.user, products: [], search: '', sort: '', category: 'all' });
+    res.render('index', { user: req.session.user, products: localProducts, search: '', sort: '', category: 'all' });
   }
 });
 
 // Product Detail
 app.get('/product/:id', async (req, res) => {
   try {
-    const [[product]] = await db.promise().query('SELECT * FROM products WHERE id = ?', [req.params.id]);
+    const product = await getProductById(req.params.id);
     if (!product) return res.redirect('/');
-    const [related] = await db.promise().query('SELECT * FROM products WHERE category = ? AND id != ? LIMIT 4', [product.category, product.id]);
-    const [galleryRows] = await db.promise().query('SELECT image_url FROM product_images WHERE product_id = ? ORDER BY sort_order', [product.id]);
-    // Build full gallery: main image first, then extras
-    const gallery = [product.image, ...galleryRows.map(r => r.image_url)];
+    // Related products
+    let related = [];
+    if (dbAvailable && db) {
+      try {
+        const [rows] = await db.promise().query('SELECT * FROM products WHERE category = ? AND id != ? LIMIT 4', [product.category, product.id]);
+        related = rows;
+      } catch (e) {}
+    }
+    if (!related.length) {
+      related = localProducts.filter(p => p.category === product.category && p.id !== product.id).slice(0, 4);
+    }
+    // Gallery images
+    let gallery = [product.image];
+    if (dbAvailable && db) {
+      try {
+        const [galleryRows] = await db.promise().query('SELECT image_url FROM product_images WHERE product_id = ? ORDER BY sort_order', [product.id]);
+        if (galleryRows.length) gallery = [product.image, ...galleryRows.map(r => r.image_url)];
+      } catch (e) {}
+    }
     res.render('product', { user: req.session.user, product, related, gallery });
   } catch (err) {
     console.error(err);
@@ -151,13 +246,10 @@ app.get('/cart/count', (req, res) => {
 // Live Search API
 app.get('/api/search', async (req, res) => {
   try {
-    const q = `%${req.query.q || ''}%`;
-    if (!req.query.q) return res.json([]);
-    const [results] = await db.promise().query(
-      'SELECT id, name, price, image, category FROM products WHERE name LIKE ? OR category LIKE ? LIMIT 6',
-      [q, q]
-    );
-    res.json(results);
+    const q = req.query.q || '';
+    if (!q) return res.json([]);
+    const results = await getProducts({ search: q });
+    res.json(results.slice(0, 6).map(p => ({ id: p.id, name: p.name, price: p.price, image: p.image, category: p.category })));
   } catch (err) { res.json([]); }
 });
 
@@ -171,7 +263,14 @@ app.post('/login', async (req, res) => {
   const { email, password } = req.body;
   if (!email || !password) return res.render('login', { user: null, error: 'Email and password are required' });
   try {
-    const [[user]] = await db.promise().query('SELECT * FROM users WHERE email = ?', [email.toLowerCase().trim()]);
+    let user = null;
+    if (dbAvailable && db) {
+      const [[row]] = await db.promise().query('SELECT * FROM users WHERE email = ?', [email.toLowerCase().trim()]);
+      user = row;
+    } else {
+      const users = readJSON('users.json');
+      user = users.find(u => u.email === email.toLowerCase().trim());
+    }
     if (!user) return res.render('login', { user: null, error: 'Invalid email or password' });
     const match = await bcrypt.compare(password, user.password);
     if (!match) return res.render('login', { user: null, error: 'Invalid email or password' });
@@ -195,14 +294,23 @@ app.post('/register', async (req, res) => {
   if (password !== confirmPassword) return res.render('register', { user: null, error: 'Passwords do not match' });
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.render('register', { user: null, error: 'Invalid email address' });
   try {
-    const [[existing]] = await db.promise().query('SELECT id FROM users WHERE email = ?', [email.toLowerCase().trim()]);
-    if (existing) return res.render('register', { user: null, error: 'Email already registered' });
     const hashed = await bcrypt.hash(password, 10);
-    const [result] = await db.promise().query(
-      'INSERT INTO users (name, email, password) VALUES (?, ?, ?)',
-      [name.trim(), email.toLowerCase().trim(), hashed]
-    );
-    req.session.user = { id: result.insertId, email: email.toLowerCase().trim(), name: name.trim() };
+    const cleanEmail = email.toLowerCase().trim();
+    const cleanName = name.trim();
+
+    if (dbAvailable && db) {
+      const [[existing]] = await db.promise().query('SELECT id FROM users WHERE email = ?', [cleanEmail]);
+      if (existing) return res.render('register', { user: null, error: 'Email already registered' });
+      const [result] = await db.promise().query('INSERT INTO users (name, email, password) VALUES (?, ?, ?)', [cleanName, cleanEmail, hashed]);
+      req.session.user = { id: result.insertId, email: cleanEmail, name: cleanName };
+    } else {
+      const users = readJSON('users.json');
+      if (users.find(u => u.email === cleanEmail)) return res.render('register', { user: null, error: 'Email already registered' });
+      const newUser = { id: getNextId('users'), name: cleanName, email: cleanEmail, password: hashed, created_at: new Date().toISOString() };
+      users.push(newUser);
+      writeJSON('users.json', users);
+      req.session.user = { id: newUser.id, email: cleanEmail, name: cleanName };
+    }
     res.redirect('/');
   } catch (err) {
     console.error(err);
