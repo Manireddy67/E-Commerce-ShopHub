@@ -5,5 +5,19 @@
     "email": "mani@gmail.com",
     "password": "$2a$10$P/3pHmTh5UHvOKki8iiAke0GrxL7OylMLO98/vLeGxBq26IgZtZdi",
     "registeredDate": "2026-04-13T07:57:36.088Z"
+  },
+  {
+    "id": 2,
+    "name": "Aman Rajak",
+    "email": "aman@gmail.com",
+    "password": "$2a$10$ugCpozMxIvXm21Wq9oXhde2HxvPeeifkJq83mNzBiW9NYKbMGOQtC",
+    "registeredDate": "2026-04-15T06:23:30.390Z"
+  },
+  {
+    "id": 3,
+    "name": "shreyansh",
+    "email": "fasu@gmail.com",
+    "password": "$2a$10$m9NN3K.YFog7IfS5ISHn8.UFiX3DPjzxxsBwy2g36c8.OoJxIzCDO",
+    "registeredDate": "2026-04-15T07:40:28.751Z"
   }
 ]

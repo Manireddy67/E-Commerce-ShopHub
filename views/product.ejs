@@ -24,16 +24,29 @@
 
       <div class="product-detail-grid">
         <div class="product-detail-image">
-          <img src="<%= product.image %>" alt="<%= product.name %>">
-          <div class="product-detail-badge">
-            <% if (product.price < 5000) { %>
-              <span class="badge badge-hot">Best Deal</span>
-            <% } else if (product.price > 50000) { %>
-              <span class="badge badge-premium">Premium</span>
-            <% } else { %>
-              <span class="badge badge-popular">Popular</span>
-            <% } %>
+          <!-- Main Image -->
+          <div class="main-image-wrap">
+            <img src="<%= gallery[0] %>" alt="<%= product.name %>" id="mainProductImg">
+            <div class="product-detail-badge">
+              <% if (product.price < 5000) { %>
+                <span class="badge badge-hot">Best Deal</span>
+              <% } else if (product.price > 50000) { %>
+                <span class="badge badge-premium">Premium</span>
+              <% } else { %>
+                <span class="badge badge-popular">Popular</span>
+              <% } %>
+            </div>
           </div>
+          <!-- Thumbnail Gallery -->
+          <% if (gallery.length > 1) { %>
+          <div class="image-thumbnails">
+            <% gallery.forEach((img, i) => { %>
+              <div class="thumb-wrap <%= i === 0 ? 'active' : '' %>" onclick="switchImage('<%= img %>', this)">
+                <img src="<%= img %>" alt="<%= product.name %> view <%= i+1 %>">
+              </div>
+            <% }); %>
+          </div>
+          <% } %>
         </div>
 
         <div class="product-detail-info">
@@ -186,6 +199,13 @@
         btn.style.color = '#ff6b35';
       }
     });
+
+    // Image gallery switcher
+    function switchImage(url, thumbEl) {
+      document.getElementById('mainProductImg').src = url;
+      document.querySelectorAll('.thumb-wrap').forEach(t => t.classList.remove('active'));
+      thumbEl.classList.add('active');
+    }
   </script>
 </body>
 </html>

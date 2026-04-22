@@ -2,36 +2,19 @@ const express = require('express');
 const session = require('express-session');
 const bodyParser = require('body-parser');
 const bcrypt = require('bcryptjs');
-const fs = require('fs');
-const path = require('path');
+const db = require('./db');   // MySQL connection pool
+
+// ── Test: callback-style query ───────────────────────────────
+db.query("SELECT * FROM products LIMIT 3", (err, result) => {
+  if (err) {
+    console.log("Query error:", err);
+  } else {
+    console.log(`📦 Sample products loaded: ${result.length} rows`);
+  }
+});
 
 const app = express();
 const PORT = 3000;
-
-// ============ DATA HELPERS ============
-const DATA_DIR = path.join(__dirname, 'data');
-
-function readData(file) {
-  try {
-    const raw = fs.readFileSync(path.join(DATA_DIR, file), 'utf8');
-    return JSON.parse(raw);
-  } catch (e) {
-    return [];
-  }
-}
-
-function writeData(file, data) {
-  fs.writeFileSync(path.join(DATA_DIR, file), JSON.stringify(data, null, 2));
-}
-
-function getNextId(file) {
-  const counterPath = path.join(DATA_DIR, 'counter.json');
-  let counters = {};
-  try { counters = JSON.parse(fs.readFileSync(counterPath, 'utf8')); } catch (e) {}
-  counters[file] = (counters[file] || 0) + 1;
-  fs.writeFileSync(counterPath, JSON.stringify(counters, null, 2));
-  return counters[file];
-}
 
 // ============ MIDDLEWARE ============
 app.set('view engine', 'ejs');
@@ -45,114 +28,137 @@ app.use(session({
   cookie: { maxAge: 24 * 60 * 60 * 1000 }
 }));
 
-// Auth middleware
 function requireLogin(req, res, next) {
   if (!req.session.user) return res.redirect('/login');
   next();
 }
-
 function requireAdmin(req, res, next) {
   if (!req.session.admin) return res.redirect('/admin/login');
   next();
 }
 
-// ============ PRODUCTS DATA ============
-const products = require('./data/products.js');
-
 // ============ CUSTOMER ROUTES ============
 
-// Home Page - with search & sort
-app.get('/', (req, res) => {
-  const { search, sort, category } = req.query;
-  let filtered = [...products];
+// Home - search, sort, category filter
+app.get('/', async (req, res) => {
+  try {
+    const { search, sort, category } = req.query;
+    let sql = 'SELECT * FROM products WHERE 1=1';
+    const params = [];
+    if (search) {
+      sql += ' AND (name LIKE ? OR category LIKE ? OR description LIKE ?)';
+      const q = `%${search}%`;
+      params.push(q, q, q);
+    }
+    if (category && category !== 'all') {
+      sql += ' AND category = ?';
+      params.push(category);
+    }
+    if (sort === 'price-asc')  sql += ' ORDER BY price ASC';
+    else if (sort === 'price-desc') sql += ' ORDER BY price DESC';
+    else if (sort === 'name-asc')   sql += ' ORDER BY name ASC';
+    else sql += ' ORDER BY id ASC';
 
-  if (search) {
-    const q = search.toLowerCase();
-    filtered = filtered.filter(p =>
-      p.name.toLowerCase().includes(q) ||
-      p.category.toLowerCase().includes(q) ||
-      p.description.toLowerCase().includes(q)
-    );
+    const [products] = await db.promise().query(sql, params);
+    res.render('index', {
+      user: req.session.user,
+      products,
+      search: search || '',
+      sort: sort || '',
+      category: category || 'all'
+    });
+  } catch (err) {
+    console.error(err);
+    res.render('index', { user: req.session.user, products: [], search: '', sort: '', category: 'all' });
   }
-
-  if (category && category !== 'all') {
-    filtered = filtered.filter(p => p.category === category);
-  }
-
-  if (sort === 'price-asc') filtered.sort((a, b) => a.price - b.price);
-  else if (sort === 'price-desc') filtered.sort((a, b) => b.price - a.price);
-  else if (sort === 'name-asc') filtered.sort((a, b) => a.name.localeCompare(b.name));
-
-  res.render('index', {
-    user: req.session.user,
-    products: filtered,
-    search: search || '',
-    sort: sort || '',
-    category: category || 'all'
-  });
 });
 
 // Product Detail
-app.get('/product/:id', (req, res) => {
-  const product = products.find(p => p.id === parseInt(req.params.id));
-  if (!product) return res.redirect('/');
-  const related = products.filter(p => p.category === product.category && p.id !== product.id).slice(0, 4);
-  res.render('product', { user: req.session.user, product, related });
+app.get('/product/:id', async (req, res) => {
+  try {
+    const [[product]] = await db.promise().query('SELECT * FROM products WHERE id = ?', [req.params.id]);
+    if (!product) return res.redirect('/');
+    const [related] = await db.promise().query('SELECT * FROM products WHERE category = ? AND id != ? LIMIT 4', [product.category, product.id]);
+    const [galleryRows] = await db.promise().query('SELECT image_url FROM product_images WHERE product_id = ? ORDER BY sort_order', [product.id]);
+    // Build full gallery: main image first, then extras
+    const gallery = [product.image, ...galleryRows.map(r => r.image_url)];
+    res.render('product', { user: req.session.user, product, related, gallery });
+  } catch (err) {
+    console.error(err);
+    res.redirect('/');
+  }
 });
 
 // Cart
-app.get('/cart', (req, res) => {
-  const cart = req.session.cart || [];
-  const cartItems = cart.map(item => {
-    const p = products.find(p => p.id === item.id);
-    return p ? { ...p, quantity: item.quantity } : null;
-  }).filter(Boolean);
-  const subtotal = cartItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-  const shipping = subtotal > 999 ? 0 : 99;
-  const total = subtotal + shipping;
-  res.render('cart', { user: req.session.user, cartItems, subtotal, shipping, total });
+app.get('/cart', async (req, res) => {
+  try {
+    const cart = req.session.cart || [];
+    const cartItems = [];
+    for (const item of cart) {
+      const [[p]] = await db.promise().query('SELECT * FROM products WHERE id = ?', [item.id]);
+      if (p) cartItems.push({ ...p, quantity: item.quantity });
+    }
+    const subtotal = cartItems.reduce((s, i) => s + i.price * i.quantity, 0);
+    const shipping = subtotal > 999 ? 0 : 99;
+    res.render('cart', { user: req.session.user, cartItems, subtotal, shipping, total: subtotal + shipping });
+  } catch (err) {
+    console.error(err);
+    res.render('cart', { user: req.session.user, cartItems: [], subtotal: 0, shipping: 0, total: 0 });
+  }
 });
 
 app.post('/cart/add', (req, res) => {
   const { productId, quantity } = req.body;
   if (!req.session.cart) req.session.cart = [];
-  const existing = req.session.cart.find(item => item.id === parseInt(productId));
-  if (existing) {
-    existing.quantity += parseInt(quantity) || 1;
-  } else {
-    req.session.cart.push({ id: parseInt(productId), quantity: parseInt(quantity) || 1 });
-  }
-  const cartCount = req.session.cart.reduce((sum, i) => sum + i.quantity, 0);
+  const existing = req.session.cart.find(i => i.id === parseInt(productId));
+  if (existing) existing.quantity += parseInt(quantity) || 1;
+  else req.session.cart.push({ id: parseInt(productId), quantity: parseInt(quantity) || 1 });
+  const cartCount = req.session.cart.reduce((s, i) => s + i.quantity, 0);
   res.json({ success: true, cartCount });
 });
 
 app.post('/cart/remove', (req, res) => {
   const { productId } = req.body;
-  if (req.session.cart) {
-    req.session.cart = req.session.cart.filter(item => item.id !== parseInt(productId));
-  }
+  if (req.session.cart) req.session.cart = req.session.cart.filter(i => i.id !== parseInt(productId));
   res.json({ success: true });
 });
 
-app.post('/cart/update', (req, res) => {
+app.post('/cart/update', async (req, res) => {
   const { productId, quantity } = req.body;
   if (!req.session.cart) return res.json({ success: false });
   const item = req.session.cart.find(i => i.id === parseInt(productId));
   if (item) {
     const qty = parseInt(quantity);
-    if (qty <= 0) {
-      req.session.cart = req.session.cart.filter(i => i.id !== parseInt(productId));
-    } else {
-      item.quantity = qty;
-    }
+    if (qty <= 0) req.session.cart = req.session.cart.filter(i => i.id !== parseInt(productId));
+    else item.quantity = qty;
   }
-  const cartItems = (req.session.cart || []).map(item => {
-    const p = products.find(p => p.id === item.id);
-    return p ? { ...p, quantity: item.quantity } : null;
-  }).filter(Boolean);
-  const subtotal = cartItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+  const cart = req.session.cart || [];
+  let subtotal = 0;
+  for (const ci of cart) {
+    const [[p]] = await db.promise().query('SELECT price FROM products WHERE id = ?', [ci.id]);
+    if (p) subtotal += p.price * ci.quantity;
+  }
   const shipping = subtotal > 999 ? 0 : 99;
-  res.json({ success: true, subtotal, shipping, total: subtotal + shipping, cartCount: cartItems.reduce((s, i) => s + i.quantity, 0) });
+  const cartCount = cart.reduce((s, i) => s + i.quantity, 0);
+  res.json({ success: true, subtotal, shipping, total: subtotal + shipping, cartCount });
+});
+
+app.get('/cart/count', (req, res) => {
+  const cart = req.session.cart || [];
+  res.json({ count: cart.reduce((s, i) => s + i.quantity, 0) });
+});
+
+// Live Search API
+app.get('/api/search', async (req, res) => {
+  try {
+    const q = `%${req.query.q || ''}%`;
+    if (!req.query.q) return res.json([]);
+    const [results] = await db.promise().query(
+      'SELECT id, name, price, image, category FROM products WHERE name LIKE ? OR category LIKE ? LIMIT 6',
+      [q, q]
+    );
+    res.json(results);
+  } catch (err) { res.json([]); }
 });
 
 // Auth
@@ -163,20 +169,18 @@ app.get('/login', (req, res) => {
 
 app.post('/login', async (req, res) => {
   const { email, password } = req.body;
-  if (!email || !password) {
-    return res.render('login', { user: null, error: 'Email and password are required' });
+  if (!email || !password) return res.render('login', { user: null, error: 'Email and password are required' });
+  try {
+    const [[user]] = await db.promise().query('SELECT * FROM users WHERE email = ?', [email.toLowerCase().trim()]);
+    if (!user) return res.render('login', { user: null, error: 'Invalid email or password' });
+    const match = await bcrypt.compare(password, user.password);
+    if (!match) return res.render('login', { user: null, error: 'Invalid email or password' });
+    req.session.user = { id: user.id, email: user.email, name: user.name };
+    res.redirect('/');
+  } catch (err) {
+    console.error(err);
+    res.render('login', { user: null, error: 'Something went wrong. Try again.' });
   }
-  const users = readData('users.json');
-  const user = users.find(u => u.email === email.toLowerCase().trim());
-  if (!user) {
-    return res.render('login', { user: null, error: 'Invalid email or password' });
-  }
-  const match = await bcrypt.compare(password, user.password);
-  if (!match) {
-    return res.render('login', { user: null, error: 'Invalid email or password' });
-  }
-  req.session.user = { id: user.id, email: user.email, name: user.name };
-  res.redirect('/');
 });
 
 app.get('/register', (req, res) => {
@@ -186,143 +190,143 @@ app.get('/register', (req, res) => {
 
 app.post('/register', async (req, res) => {
   const { name, email, password, confirmPassword } = req.body;
-  if (!name || !email || !password) {
-    return res.render('register', { user: null, error: 'All fields are required' });
+  if (!name || !email || !password) return res.render('register', { user: null, error: 'All fields are required' });
+  if (password.length < 6) return res.render('register', { user: null, error: 'Password must be at least 6 characters' });
+  if (password !== confirmPassword) return res.render('register', { user: null, error: 'Passwords do not match' });
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.render('register', { user: null, error: 'Invalid email address' });
+  try {
+    const [[existing]] = await db.promise().query('SELECT id FROM users WHERE email = ?', [email.toLowerCase().trim()]);
+    if (existing) return res.render('register', { user: null, error: 'Email already registered' });
+    const hashed = await bcrypt.hash(password, 10);
+    const [result] = await db.promise().query(
+      'INSERT INTO users (name, email, password) VALUES (?, ?, ?)',
+      [name.trim(), email.toLowerCase().trim(), hashed]
+    );
+    req.session.user = { id: result.insertId, email: email.toLowerCase().trim(), name: name.trim() };
+    res.redirect('/');
+  } catch (err) {
+    console.error(err);
+    res.render('register', { user: null, error: 'Registration failed. Try again.' });
   }
-  if (password.length < 6) {
-    return res.render('register', { user: null, error: 'Password must be at least 6 characters' });
-  }
-  if (password !== confirmPassword) {
-    return res.render('register', { user: null, error: 'Passwords do not match' });
-  }
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  if (!emailRegex.test(email)) {
-    return res.render('register', { user: null, error: 'Invalid email address' });
-  }
-  const users = readData('users.json');
-  if (users.find(u => u.email === email.toLowerCase().trim())) {
-    return res.render('register', { user: null, error: 'Email already registered' });
-  }
-  const hashedPassword = await bcrypt.hash(password, 10);
-  const newUser = {
-    id: getNextId('users'),
-    name: name.trim(),
-    email: email.toLowerCase().trim(),
-    password: hashedPassword,
-    registeredDate: new Date().toISOString()
-  };
-  users.push(newUser);
-  writeData('users.json', users);
-  req.session.user = { id: newUser.id, email: newUser.email, name: newUser.name };
-  res.redirect('/');
 });
 
-app.get('/logout', (req, res) => {
-  req.session.destroy();
-  res.redirect('/');
-});
+app.get('/logout', (req, res) => { req.session.destroy(); res.redirect('/'); });
 
 // Checkout
-app.get('/checkout', requireLogin, (req, res) => {
-  const cart = req.session.cart || [];
-  if (cart.length === 0) return res.redirect('/cart');
-  const cartItems = cart.map(item => {
-    const p = products.find(p => p.id === item.id);
-    return p ? { ...p, quantity: item.quantity } : null;
-  }).filter(Boolean);
-  const subtotal = cartItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-  const shipping = subtotal > 999 ? 0 : 99;
-  const tax = Math.round(subtotal * 0.18);
-  const total = subtotal + shipping + tax;
-  res.render('checkout', { user: req.session.user, cartItems, subtotal, shipping, tax, total });
+app.get('/checkout', requireLogin, async (req, res) => {
+  try {
+    const cart = req.session.cart || [];
+    if (!cart.length) return res.redirect('/cart');
+    const cartItems = [];
+    for (const item of cart) {
+      const [[p]] = await db.promise().query('SELECT * FROM products WHERE id = ?', [item.id]);
+      if (p) cartItems.push({ ...p, quantity: item.quantity });
+    }
+    const subtotal = cartItems.reduce((s, i) => s + i.price * i.quantity, 0);
+    const shipping = subtotal > 999 ? 0 : 99;
+    const tax = Math.round(subtotal * 0.18);
+    res.render('checkout', { user: req.session.user, cartItems, subtotal, shipping, tax, total: subtotal + shipping + tax });
+  } catch (err) {
+    console.error(err);
+    res.redirect('/cart');
+  }
 });
 
-app.post('/checkout', requireLogin, (req, res) => {
+app.post('/checkout', requireLogin, async (req, res) => {
   const cart = req.session.cart || [];
-  if (cart.length === 0) return res.json({ success: false, message: 'Cart is empty' });
-
-  const { paymentMethod, shippingDetails } = req.body;
+  if (!cart.length) return res.json({ success: false, message: 'Cart is empty' });
+  const { paymentMethod, paymentRef, shippingDetails } = req.body;
   const { firstName, lastName, email, phone, address, city, state, pincode, landmark } = shippingDetails || {};
-
-  if (!firstName || !lastName || !phone || !address || !city || !state || !pincode) {
+  if (!firstName || !lastName || !phone || !address || !city || !state || !pincode)
     return res.json({ success: false, message: 'Please fill all required shipping details' });
+  if (!/^[0-9]{10}$/.test(phone)) return res.json({ success: false, message: 'Invalid phone number' });
+  if (!/^[0-9]{6}$/.test(pincode)) return res.json({ success: false, message: 'Invalid PIN code' });
+  try {
+    const cartItems = [];
+    for (const item of cart) {
+      const [[p]] = await db.promise().query('SELECT * FROM products WHERE id = ?', [item.id]);
+      if (p) cartItems.push({ ...p, quantity: item.quantity });
+    }
+    const subtotal = cartItems.reduce((s, i) => s + i.price * i.quantity, 0);
+    const shipping = subtotal > 999 ? 0 : 99;
+    const tax = Math.round(subtotal * 0.18);
+    const total = subtotal + shipping + tax;
+
+    const [orderResult] = await db.promise().query(
+      `INSERT INTO orders (user_id, customer_name, email, phone, address, city, state, pincode, landmark, subtotal, shipping, tax, total_amount, payment_method, payment_ref, status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
+      [req.session.user.id, `${firstName} ${lastName}`, email || req.session.user.email,
+       phone, address, city, state, pincode, landmark || '',
+       subtotal, shipping, tax, total, paymentMethod || 'cod', paymentRef || null]
+    );
+    const orderId = orderResult.insertId;
+
+    for (const item of cartItems) {
+      await db.promise().query(
+        'INSERT INTO order_items (order_id, product_id, name, image, price, quantity) VALUES (?, ?, ?, ?, ?, ?)',
+        [orderId, item.id, item.name, item.image, item.price, item.quantity]
+      );
+    }
+    req.session.cart = [];
+    res.json({ success: true, message: 'Order placed!', orderId });
+  } catch (err) {
+    console.error(err);
+    res.json({ success: false, message: 'Order failed. Please try again.' });
   }
-  if (!/^[0-9]{10}$/.test(phone)) {
-    return res.json({ success: false, message: 'Invalid phone number' });
-  }
-  if (!/^[0-9]{6}$/.test(pincode)) {
-    return res.json({ success: false, message: 'Invalid PIN code' });
-  }
-
-  const cartItems = cart.map(item => {
-    const p = products.find(p => p.id === item.id);
-    return p ? { id: p.id, name: p.name, price: p.price, image: p.image, quantity: item.quantity } : null;
-  }).filter(Boolean);
-
-  const subtotal = cartItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-  const shipping = subtotal > 999 ? 0 : 99;
-  const tax = Math.round(subtotal * 0.18);
-  const total = subtotal + shipping + tax;
-
-  const orders = readData('orders.json');
-  const newOrder = {
-    id: getNextId('orders'),
-    userId: req.session.user.id,
-    customerName: `${firstName} ${lastName}`,
-    email: email || req.session.user.email,
-    phone,
-    shippingAddress: { address, city, state, pincode, landmark: landmark || '' },
-    orderItems: cartItems,
-    subtotal,
-    shipping,
-    tax,
-    total,
-    paymentMethod: paymentMethod || 'cod',
-    status: 'pending',
-    date: new Date().toISOString()
-  };
-
-  orders.push(newOrder);
-  writeData('orders.json', orders);
-  req.session.cart = [];
-
-  res.json({ success: true, message: 'Order placed successfully!', orderId: newOrder.id });
 });
 
 // Order Confirmation
-app.get('/order-confirmation/:id', requireLogin, (req, res) => {
-  const orders = readData('orders.json');
-  const order = orders.find(o => o.id === parseInt(req.params.id));
-  if (!order || order.userId !== req.session.user.id) return res.redirect('/');
-  res.render('order-confirmation', { user: req.session.user, order });
+app.get('/order-confirmation/:id', requireLogin, async (req, res) => {
+  try {
+    const [[order]] = await db.promise().query('SELECT * FROM orders WHERE id = ? AND user_id = ?', [req.params.id, req.session.user.id]);
+    if (!order) return res.redirect('/');
+    const [orderItems] = await db.promise().query('SELECT * FROM order_items WHERE order_id = ?', [order.id]);
+
+    // Map DB snake_case → camelCase for the view
+    order.orderItems      = orderItems;
+    order.customerName    = order.customer_name;
+    order.paymentMethod   = order.payment_method  || 'cod';
+    order.paymentRef      = order.payment_ref      || null;
+    order.total           = parseFloat(order.total_amount);
+    order.subtotal        = parseFloat(order.subtotal)  || order.total;
+    order.shipping        = parseFloat(order.shipping)  || 0;
+    order.tax             = parseFloat(order.tax)       || 0;
+    order.date            = order.created_at;
+    order.shippingAddress = {
+      address  : order.address,
+      city     : order.city,
+      state    : order.state,
+      pincode  : order.pincode,
+      landmark : order.landmark || ''
+    };
+
+    res.render('order-confirmation', { user: req.session.user, order });
+  } catch (err) {
+    console.error(err);
+    res.redirect('/');
+  }
 });
 
-// Order History
-app.get('/my-orders', requireLogin, (req, res) => {
-  const orders = readData('orders.json');
-  const userOrders = orders.filter(o => o.userId === req.session.user.id).reverse();
-  res.render('my-orders', { user: req.session.user, orders: userOrders });
-});
-
-// Cart count API
-app.get('/cart/count', (req, res) => {
-  const cart = req.session.cart || [];
-  const count = cart.reduce((sum, i) => sum + i.quantity, 0);
-  res.json({ count });
-});
-
-// Search API (for live search)
-app.get('/api/search', (req, res) => {
-  const q = (req.query.q || '').toLowerCase();
-  if (!q) return res.json([]);
-  const results = products.filter(p =>
-    p.name.toLowerCase().includes(q) || p.category.toLowerCase().includes(q)
-  ).slice(0, 6).map(p => ({ id: p.id, name: p.name, price: p.price, image: p.image, category: p.category }));
-  res.json(results);
+// My Orders
+app.get('/my-orders', requireLogin, async (req, res) => {
+  try {
+    const [orders] = await db.promise().query('SELECT * FROM orders WHERE user_id = ? ORDER BY created_at DESC', [req.session.user.id]);
+    for (const order of orders) {
+      const [items] = await db.promise().query('SELECT * FROM order_items WHERE order_id = ?', [order.id]);
+      order.orderItems      = items;
+      order.total           = parseFloat(order.total_amount);
+      order.paymentMethod   = order.payment_method || 'cod';
+      order.shippingAddress = { city: order.city, state: order.state };
+      order.date            = order.created_at;
+    }
+    res.render('my-orders', { user: req.session.user, orders });
+  } catch (err) {
+    console.error(err);
+    res.render('my-orders', { user: req.session.user, orders: [] });
+  }
 });
 
 // ============ ADMIN ROUTES ============
-
 app.get('/admin', (req, res) => res.redirect('/admin/login'));
 
 app.get('/admin/login', (req, res) => {
@@ -339,125 +343,152 @@ app.post('/admin/login', (req, res) => {
   res.render('admin-login', { error: 'Invalid admin credentials' });
 });
 
-app.get('/admin/logout', (req, res) => {
-  req.session.admin = null;
-  res.redirect('/admin/login');
-});
+app.get('/admin/logout', (req, res) => { req.session.admin = null; res.redirect('/admin/login'); });
 
-app.get('/admin/dashboard', requireAdmin, (req, res) => {
-  const orders = readData('orders.json');
-  const users = readData('users.json');
-  const totalRevenue = orders.reduce((sum, o) => sum + (o.total || 0), 0);
-  const pendingOrders = orders.filter(o => o.status === 'pending').length;
-  const stats = {
-    totalOrders: orders.length,
-    totalRevenue,
-    totalCustomers: users.length,
-    totalProducts: products.length,
-    pendingOrders
-  };
-  const recentOrders = orders.slice(-5).reverse();
-  res.render('admin-dashboard', { stats, recentOrders });
-});
-
-app.get('/admin/orders', requireAdmin, (req, res) => {
-  const orders = readData('orders.json').reverse();
-  res.render('admin-orders', { orders });
-});
-
-app.get('/admin/orders/:id', requireAdmin, (req, res) => {
-  const orders = readData('orders.json');
-  const order = orders.find(o => o.id === parseInt(req.params.id));
-  if (!order) return res.status(404).json({ error: 'Order not found' });
-  res.json(order);
-});
-
-app.post('/admin/orders/update-status', requireAdmin, (req, res) => {
-  const { orderId, status } = req.body;
-  const validStatuses = ['pending', 'processing', 'shipped', 'delivered', 'cancelled'];
-  if (!validStatuses.includes(status)) return res.json({ success: false, message: 'Invalid status' });
-  const orders = readData('orders.json');
-  const order = orders.find(o => o.id === parseInt(orderId));
-  if (!order) return res.json({ success: false, message: 'Order not found' });
-  order.status = status;
-  writeData('orders.json', orders);
-  res.json({ success: true, message: 'Status updated' });
-});
-
-app.get('/admin/products', requireAdmin, (req, res) => {
-  res.render('admin-products', { products });
-});
-
-app.get('/admin/products/:id', requireAdmin, (req, res) => {
-  const product = products.find(p => p.id === parseInt(req.params.id));
-  if (!product) return res.status(404).json({ error: 'Product not found' });
-  res.json(product);
-});
-
-app.post('/admin/products/add', requireAdmin, (req, res) => {
-  const { name, price, category, description, image, stock } = req.body;
-  if (!name || !price || !category || !description || !image) {
-    return res.json({ success: false, message: 'All fields are required' });
+app.get('/admin/dashboard', requireAdmin, async (req, res) => {
+  try {
+    const [[{ totalOrders }]]  = await db.promise().query('SELECT COUNT(*) as totalOrders FROM orders');
+    const [[{ totalRevenue }]] = await db.promise().query('SELECT COALESCE(SUM(total_amount),0) as totalRevenue FROM orders');
+    const [[{ totalCustomers }]] = await db.promise().query('SELECT COUNT(*) as totalCustomers FROM users');
+    const [[{ totalProducts }]]  = await db.promise().query('SELECT COUNT(*) as totalProducts FROM products');
+    const [[{ pendingOrders }]]  = await db.promise().query("SELECT COUNT(*) as pendingOrders FROM orders WHERE status='pending'");
+    const [recentOrders] = await db.promise().query('SELECT * FROM orders ORDER BY created_at DESC LIMIT 5');
+    for (const o of recentOrders) {
+      o.total = parseFloat(o.total_amount);
+      o.customerName = o.customer_name;
+      o.date = o.created_at;
+      o.paymentMethod = o.payment_method;
+      const [[{ items }]] = await db.promise().query('SELECT COUNT(*) as items FROM order_items WHERE order_id = ?', [o.id]);
+      o.items = items;
+    }
+    res.render('admin-dashboard', {
+      stats: { totalOrders, totalRevenue: parseFloat(totalRevenue), totalCustomers, totalProducts, pendingOrders },
+      recentOrders
+    });
+  } catch (err) {
+    console.error(err);
+    res.render('admin-dashboard', { stats: { totalOrders:0, totalRevenue:0, totalCustomers:0, totalProducts:0, pendingOrders:0 }, recentOrders: [] });
   }
-  const newId = Math.max(...products.map(p => p.id)) + 1;
-  const newProduct = {
-    id: newId,
-    name: name.trim(),
-    price: parseFloat(price),
-    category,
-    description: description.trim(),
-    image: image.trim(),
-    stock: parseInt(stock) || 100
-  };
-  products.push(newProduct);
-  res.json({ success: true, message: 'Product added successfully', product: newProduct });
 });
 
-app.post('/admin/products/update', requireAdmin, (req, res) => {
+app.get('/admin/orders', requireAdmin, async (req, res) => {
+  try {
+    const [rows] = await db.promise().query('SELECT * FROM orders ORDER BY created_at DESC');
+    const orders = [];
+    for (const o of rows) {
+      const [[{ items }]] = await db.promise().query('SELECT COUNT(*) as items FROM order_items WHERE order_id = ?', [o.id]);
+      orders.push({
+        ...o,
+        total         : parseFloat(o.total_amount),
+        customerName  : o.customer_name,
+        date          : o.created_at,
+        paymentMethod : o.payment_method || 'cod',
+        items
+      });
+    }
+    res.render('admin-orders', { orders });
+  } catch (err) {
+    console.error(err);
+    res.render('admin-orders', { orders: [] });
+  }
+});
+
+app.get('/admin/orders/:id', requireAdmin, async (req, res) => {
+  try {
+    const [[order]] = await db.promise().query('SELECT * FROM orders WHERE id = ?', [req.params.id]);
+    if (!order) return res.status(404).json({ error: 'Not found' });
+    const [orderItems] = await db.promise().query('SELECT * FROM order_items WHERE order_id = ?', [order.id]);
+    res.json({ ...order, orderItems, total: parseFloat(order.total_amount), customerName: order.customer_name,
+      shippingAddress: { address: order.address, city: order.city, state: order.state, pincode: order.pincode, landmark: order.landmark },
+      paymentMethod: order.payment_method, subtotal: parseFloat(order.subtotal), tax: parseFloat(order.tax) });
+  } catch (err) { res.status(500).json({ error: 'Server error' }); }
+});
+
+app.post('/admin/orders/update-status', requireAdmin, async (req, res) => {
+  const { orderId, status } = req.body;
+  const valid = ['pending','processing','shipped','delivered','cancelled'];
+  if (!valid.includes(status)) return res.json({ success: false, message: 'Invalid status' });
+  try {
+    await db.promise().query('UPDATE orders SET status = ? WHERE id = ?', [status, orderId]);
+    res.json({ success: true, message: 'Status updated' });
+  } catch (err) { res.json({ success: false, message: 'Update failed' }); }
+});
+
+app.get('/admin/products', requireAdmin, async (req, res) => {
+  try {
+    const [products] = await db.promise().query('SELECT * FROM products ORDER BY id');
+    res.render('admin-products', { products });
+  } catch (err) { res.render('admin-products', { products: [] }); }
+});
+
+app.get('/admin/products/:id', requireAdmin, async (req, res) => {
+  try {
+    const [[product]] = await db.promise().query('SELECT * FROM products WHERE id = ?', [req.params.id]);
+    if (!product) return res.status(404).json({ error: 'Not found' });
+    res.json(product);
+  } catch (err) { res.status(500).json({ error: 'Server error' }); }
+});
+
+app.post('/admin/products/add', requireAdmin, async (req, res) => {
+  const { name, price, category, description, image, stock } = req.body;
+  if (!name || !price || !category || !description || !image)
+    return res.json({ success: false, message: 'All fields are required' });
+  try {
+    await db.promise().query('INSERT INTO products (name, price, category, description, image, stock) VALUES (?, ?, ?, ?, ?, ?)',
+      [name.trim(), parseFloat(price), category, description.trim(), image.trim(), parseInt(stock) || 100]);
+    res.json({ success: true, message: 'Product added successfully' });
+  } catch (err) { res.json({ success: false, message: 'Failed to add product' }); }
+});
+
+app.post('/admin/products/update', requireAdmin, async (req, res) => {
   const { id, name, price, category, description, image, stock } = req.body;
-  const idx = products.findIndex(p => p.id === parseInt(id));
-  if (idx === -1) return res.json({ success: false, message: 'Product not found' });
-  products[idx] = {
-    ...products[idx],
-    name: name.trim(),
-    price: parseFloat(price),
-    category,
-    description: description.trim(),
-    image: image.trim(),
-    stock: parseInt(stock) || products[idx].stock
-  };
-  res.json({ success: true, message: 'Product updated successfully' });
+  try {
+    await db.promise().query('UPDATE products SET name=?, price=?, category=?, description=?, image=?, stock=? WHERE id=?',
+      [name.trim(), parseFloat(price), category, description.trim(), image.trim(), parseInt(stock) || 100, id]);
+    res.json({ success: true, message: 'Product updated successfully' });
+  } catch (err) { res.json({ success: false, message: 'Failed to update product' }); }
 });
 
-app.post('/admin/products/delete', requireAdmin, (req, res) => {
+app.post('/admin/products/delete', requireAdmin, async (req, res) => {
+  try {
+    await db.promise().query('DELETE FROM products WHERE id = ?', [req.body.id]);
+    res.json({ success: true, message: 'Product deleted successfully' });
+  } catch (err) { res.json({ success: false, message: 'Failed to delete product' }); }
+});
+
+// Delete user
+app.post('/admin/customers/delete', requireAdmin, async (req, res) => {
   const { id } = req.body;
-  const idx = products.findIndex(p => p.id === parseInt(id));
-  if (idx === -1) return res.json({ success: false, message: 'Product not found' });
-  products.splice(idx, 1);
-  res.json({ success: true, message: 'Product deleted successfully' });
+  try {
+    await db.promise().query('DELETE FROM orders WHERE user_id = ?', [id]);
+    await db.promise().query('DELETE FROM users WHERE id = ?', [id]);
+    res.json({ success: true, message: 'User deleted successfully' });
+  } catch (err) {
+    res.json({ success: false, message: 'Failed to delete user' });
+  }
 });
 
-app.get('/admin/customers', requireAdmin, (req, res) => {
-  const users = readData('users.json');
-  const orders = readData('orders.json');
-  const customers = users.map(u => {
-    const userOrders = orders.filter(o => o.userId === u.id);
-    return {
-      ...u,
-      totalOrders: userOrders.length,
-      totalSpent: userOrders.reduce((sum, o) => sum + (o.total || 0), 0)
-    };
-  });
-  res.render('admin-customers', { customers });
+app.get('/admin/customers', requireAdmin, async (req, res) => {
+  try {
+    const [users] = await db.promise().query('SELECT id, name, email, created_at FROM users ORDER BY created_at DESC');
+    const customers = [];
+    for (const u of users) {
+      const [[{ totalOrders }]] = await db.promise().query('SELECT COUNT(*) as totalOrders FROM orders WHERE user_id = ?', [u.id]);
+      const [[{ totalSpent }]]  = await db.promise().query('SELECT COALESCE(SUM(total_amount),0) as totalSpent FROM orders WHERE user_id = ?', [u.id]);
+      customers.push({ ...u, totalOrders, totalSpent: parseFloat(totalSpent), registeredDate: u.created_at });
+    }
+    res.render('admin-customers', { customers });
+  } catch (err) {
+    console.error(err);
+    res.render('admin-customers', { customers: [] });
+  }
 });
 
-// 404 Handler
-app.use((req, res) => {
-  res.status(404).render('404', { user: req.session.user || null });
-});
+// 404
+app.use((req, res) => res.status(404).render('404', { user: req.session.user || null }));
 
 app.listen(PORT, () => {
   console.log(`\n🚀 ShopHub running at http://localhost:${PORT}`);
-  console.log(`🔑 Admin panel: http://localhost:${PORT}/admin`);
-  console.log(`   Username: admin | Password: admin123\n`);
+  console.log(`🗄️  Database: MySQL (ecommerce_db)`);
+  console.log(`🔑 Admin: http://localhost:${PORT}/admin  (admin / admin123)\n`);
 });
