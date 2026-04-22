@@ -1,40 +1,32 @@
 const mysql = require("mysql2");
 
-// ── Create connection pool ───────────────────────────────────
-const pool = mysql.createPool({
-  host            : "localhost",
-  user            : "root",
-  password        : "1422",
-  database        : "ecommerce_db",
+// Use environment variables if available, otherwise use local defaults
+const dbConfig = {
+  host            : process.env.DB_HOST     || "localhost",
+  user            : process.env.DB_USER     || "root",
+  password        : process.env.DB_PASSWORD || "1422",
+  database        : process.env.DB_NAME     || "ecommerce_db",
   waitForConnections: true,
   connectionLimit : 10,
   queueLimit      : 0
-});
+};
 
-// ── Test connection on startup ───────────────────────────────
-pool.query("SELECT 1", (err) => {
-  if (err) {
-    console.error("❌ DB Connection failed:", err.message);
-  } else {
-    console.log("✅ Connected to MySQL database!");
-  }
-});
+let pool = null;
 
-// ── Callback-style usage (as requested) ─────────────────────
-//
-//   const db = require("./db");
-//
-//   db.query("SELECT * FROM products", (err, result) => {
-//     if (err) { console.log(err); }
-//     else     { console.log(result); }
-//   });
-//
-// ── Promise / async-await usage ─────────────────────────────
-//
-//   const db = require("./db");
-//
-//   const [rows] = await db.promise().query("SELECT * FROM products");
-//   console.log(rows);
-//
+try {
+  pool = mysql.createPool(dbConfig);
+  // Test connection silently
+  pool.query("SELECT 1", (err) => {
+    if (err) {
+      console.log("⚠️  MySQL not available:", err.code);
+      pool = null; // disable pool so fallback kicks in
+    } else {
+      console.log("✅ Connected to MySQL database!");
+    }
+  });
+} catch (e) {
+  console.log("⚠️  MySQL pool creation failed:", e.message);
+  pool = null;
+}
 
 module.exports = pool;

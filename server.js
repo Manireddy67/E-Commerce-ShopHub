@@ -5,63 +5,65 @@ const bcrypt = require('bcryptjs');
 const fs = require('fs');
 const path = require('path');
 
-// ── DB with fallback ─────────────────────────────────────────
-let db = null;
-let dbAvailable = false;
-
-try {
-  db = require('./db');
-  db.query('SELECT 1', (err) => {
-    if (err) {
-      console.log('⚠️  MySQL not available — running in file-based mode');
-      dbAvailable = false;
-    } else {
-      console.log('✅ MySQL connected — running in database mode');
-      dbAvailable = true;
-    }
-  });
-} catch (e) {
-  console.log('⚠️  db.js not found — running in file-based mode');
-}
-
-// ── Fallback: load products from local JS file ───────────────
+// ── Load products from local file (always available) ─────────
 let localProducts = [];
 try {
   localProducts = require('./data/products.js');
   console.log(`📦 Local products loaded: ${localProducts.length}`);
 } catch (e) {
-  console.log('⚠️  data/products.js not found');
+  console.log('⚠️  data/products.js not found:', e.message);
+}
+
+// ── DB setup (optional — falls back gracefully) ───────────────
+let db = null;
+try {
+  const pool = require('./db');
+  if (pool) {
+    db = pool;
+    console.log('🗄️  MySQL pool created');
+  }
+} catch (e) {
+  console.log('⚠️  MySQL not available, using file-based fallback');
+}
+
+// Safe DB query wrapper — returns null if DB unavailable
+async function dbQuery(sql, params = []) {
+  if (!db) return null;
+  try {
+    const rows = await dbQuery(sql, params);
+    return rows;
+  } catch (e) {
+    console.error('DB query error:', e.message);
+    return null;
+  }
 }
 
 // ── Helper: get products (DB or local fallback) ──────────────
 async function getProducts(filters = {}) {
-  if (dbAvailable && db) {
-    try {
-      const { search, sort, category } = filters;
-      let sql = 'SELECT * FROM products WHERE 1=1';
-      const params = [];
-      if (search) {
-        sql += ' AND (name LIKE ? OR category LIKE ? OR description LIKE ?)';
-        const q = `%${search}%`;
-        params.push(q, q, q);
-      }
-      if (category && category !== 'all') {
-        sql += ' AND category = ?';
-        params.push(category);
-      }
-      if (sort === 'price-asc')       sql += ' ORDER BY price ASC';
-      else if (sort === 'price-desc') sql += ' ORDER BY price DESC';
-      else if (sort === 'name-asc')   sql += ' ORDER BY name ASC';
-      else                            sql += ' ORDER BY id ASC';
-      const [rows] = await db.promise().query(sql, params);
-      return rows;
-    } catch (e) {
-      console.error('DB query failed, using local fallback:', e.message);
-    }
+  const { search, sort, category } = filters;
+
+  // Try DB first
+  let sql = 'SELECT * FROM products WHERE 1=1';
+  const params = [];
+  if (search) {
+    sql += ' AND (name LIKE ? OR category LIKE ? OR description LIKE ?)';
+    const q = `%${search}%`;
+    params.push(q, q, q);
   }
+  if (category && category !== 'all') {
+    sql += ' AND category = ?';
+    params.push(category);
+  }
+  if (sort === 'price-asc')       sql += ' ORDER BY price ASC';
+  else if (sort === 'price-desc') sql += ' ORDER BY price DESC';
+  else if (sort === 'name-asc')   sql += ' ORDER BY name ASC';
+  else                            sql += ' ORDER BY id ASC';
+
+  const dbRows = await dbQuery(sql, params);
+  if (dbRows !== null) return dbRows;
+
   // Fallback to local products.js
   let result = [...localProducts];
-  const { search, sort, category } = filters;
   if (search) {
     const q = search.toLowerCase();
     result = result.filter(p =>
@@ -73,19 +75,15 @@ async function getProducts(filters = {}) {
   if (category && category !== 'all') {
     result = result.filter(p => p.category === category);
   }
-  if (sort === 'price-asc')       result.sort((a,b) => a.price - b.price);
-  else if (sort === 'price-desc') result.sort((a,b) => b.price - a.price);
-  else if (sort === 'name-asc')   result.sort((a,b) => a.name.localeCompare(b.name));
+  if (sort === 'price-asc')       result.sort((a, b) => a.price - b.price);
+  else if (sort === 'price-desc') result.sort((a, b) => b.price - a.price);
+  else if (sort === 'name-asc')   result.sort((a, b) => a.name.localeCompare(b.name));
   return result;
 }
 
 async function getProductById(id) {
-  if (dbAvailable && db) {
-    try {
-      const [[p]] = await db.promise().query('SELECT * FROM products WHERE id = ?', [id]);
-      return p || null;
-    } catch (e) {}
-  }
+  const rows = await dbQuery('SELECT * FROM products WHERE id = ?', [id]);
+  if (rows && rows.length) return rows[0];
   return localProducts.find(p => p.id === parseInt(id)) || null;
 }
 
@@ -162,7 +160,7 @@ app.get('/product/:id', async (req, res) => {
     let related = [];
     if (dbAvailable && db) {
       try {
-        const [rows] = await db.promise().query('SELECT * FROM products WHERE category = ? AND id != ? LIMIT 4', [product.category, product.id]);
+        const rows = await dbQuery('SELECT * FROM products WHERE category = ? AND id != ? LIMIT 4', [product.category, product.id]);
         related = rows;
       } catch (e) {}
     }
@@ -173,7 +171,7 @@ app.get('/product/:id', async (req, res) => {
     let gallery = [product.image];
     if (dbAvailable && db) {
       try {
-        const [galleryRows] = await db.promise().query('SELECT image_url FROM product_images WHERE product_id = ? ORDER BY sort_order', [product.id]);
+        const galleryRows = await dbQuery('SELECT image_url FROM product_images WHERE product_id = ? ORDER BY sort_order', [product.id]);
         if (galleryRows.length) gallery = [product.image, ...galleryRows.map(r => r.image_url)];
       } catch (e) {}
     }
@@ -190,7 +188,7 @@ app.get('/cart', async (req, res) => {
     const cart = req.session.cart || [];
     const cartItems = [];
     for (const item of cart) {
-      const [[p]] = await db.promise().query('SELECT * FROM products WHERE id = ?', [item.id]);
+      const _r_p = await dbQuery('SELECT * FROM products WHERE id = ?', [item.id]); const p = _r_p?.[0];
       if (p) cartItems.push({ ...p, quantity: item.quantity });
     }
     const subtotal = cartItems.reduce((s, i) => s + i.price * i.quantity, 0);
@@ -230,7 +228,7 @@ app.post('/cart/update', async (req, res) => {
   const cart = req.session.cart || [];
   let subtotal = 0;
   for (const ci of cart) {
-    const [[p]] = await db.promise().query('SELECT price FROM products WHERE id = ?', [ci.id]);
+    const _r_p = await dbQuery('SELECT price FROM products WHERE id = ?', [ci.id]); const p = _r_p?.[0];
     if (p) subtotal += p.price * ci.quantity;
   }
   const shipping = subtotal > 999 ? 0 : 99;
@@ -265,7 +263,7 @@ app.post('/login', async (req, res) => {
   try {
     let user = null;
     if (dbAvailable && db) {
-      const [[row]] = await db.promise().query('SELECT * FROM users WHERE email = ?', [email.toLowerCase().trim()]);
+      const _ur = await dbQuery('SELECT * FROM users WHERE email = ?', [email.toLowerCase().trim()]);
       user = row;
     } else {
       const users = readJSON('users.json');
@@ -299,9 +297,9 @@ app.post('/register', async (req, res) => {
     const cleanName = name.trim();
 
     if (dbAvailable && db) {
-      const [[existing]] = await db.promise().query('SELECT id FROM users WHERE email = ?', [cleanEmail]);
+      const _r_existing = await dbQuery('SELECT id FROM users WHERE email = ?', [cleanEmail]); const existing = _r_existing?.[0];
       if (existing) return res.render('register', { user: null, error: 'Email already registered' });
-      const [result] = await db.promise().query('INSERT INTO users (name, email, password) VALUES (?, ?, ?)', [cleanName, cleanEmail, hashed]);
+      const result = await dbQuery('INSERT INTO users (name, email, password) VALUES (?, ?, ?)', [cleanName, cleanEmail, hashed]);
       req.session.user = { id: result.insertId, email: cleanEmail, name: cleanName };
     } else {
       const users = readJSON('users.json');
@@ -327,7 +325,7 @@ app.get('/checkout', requireLogin, async (req, res) => {
     if (!cart.length) return res.redirect('/cart');
     const cartItems = [];
     for (const item of cart) {
-      const [[p]] = await db.promise().query('SELECT * FROM products WHERE id = ?', [item.id]);
+      const _r_p = await dbQuery('SELECT * FROM products WHERE id = ?', [item.id]); const p = _r_p?.[0];
       if (p) cartItems.push({ ...p, quantity: item.quantity });
     }
     const subtotal = cartItems.reduce((s, i) => s + i.price * i.quantity, 0);
@@ -352,7 +350,7 @@ app.post('/checkout', requireLogin, async (req, res) => {
   try {
     const cartItems = [];
     for (const item of cart) {
-      const [[p]] = await db.promise().query('SELECT * FROM products WHERE id = ?', [item.id]);
+      const _r_p = await dbQuery('SELECT * FROM products WHERE id = ?', [item.id]); const p = _r_p?.[0];
       if (p) cartItems.push({ ...p, quantity: item.quantity });
     }
     const subtotal = cartItems.reduce((s, i) => s + i.price * i.quantity, 0);
@@ -360,7 +358,7 @@ app.post('/checkout', requireLogin, async (req, res) => {
     const tax = Math.round(subtotal * 0.18);
     const total = subtotal + shipping + tax;
 
-    const [orderResult] = await db.promise().query(
+    const orderResult = await dbQuery(
       `INSERT INTO orders (user_id, customer_name, email, phone, address, city, state, pincode, landmark, subtotal, shipping, tax, total_amount, payment_method, payment_ref, status)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
       [req.session.user.id, `${firstName} ${lastName}`, email || req.session.user.email,
@@ -370,7 +368,7 @@ app.post('/checkout', requireLogin, async (req, res) => {
     const orderId = orderResult.insertId;
 
     for (const item of cartItems) {
-      await db.promise().query(
+      await dbQuery(
         'INSERT INTO order_items (order_id, product_id, name, image, price, quantity) VALUES (?, ?, ?, ?, ?, ?)',
         [orderId, item.id, item.name, item.image, item.price, item.quantity]
       );
@@ -386,9 +384,9 @@ app.post('/checkout', requireLogin, async (req, res) => {
 // Order Confirmation
 app.get('/order-confirmation/:id', requireLogin, async (req, res) => {
   try {
-    const [[order]] = await db.promise().query('SELECT * FROM orders WHERE id = ? AND user_id = ?', [req.params.id, req.session.user.id]);
+    const _r_order = await dbQuery('SELECT * FROM orders WHERE id = ? AND user_id = ?', [req.params.id, req.session.user.id]); const order = _r_order?.[0];
     if (!order) return res.redirect('/');
-    const [orderItems] = await db.promise().query('SELECT * FROM order_items WHERE order_id = ?', [order.id]);
+    const orderItems = await dbQuery('SELECT * FROM order_items WHERE order_id = ?', [order.id]);
 
     // Map DB snake_case → camelCase for the view
     order.orderItems      = orderItems;
@@ -418,9 +416,9 @@ app.get('/order-confirmation/:id', requireLogin, async (req, res) => {
 // My Orders
 app.get('/my-orders', requireLogin, async (req, res) => {
   try {
-    const [orders] = await db.promise().query('SELECT * FROM orders WHERE user_id = ? ORDER BY created_at DESC', [req.session.user.id]);
+    const orders = await dbQuery('SELECT * FROM orders WHERE user_id = ? ORDER BY created_at DESC', [req.session.user.id]);
     for (const order of orders) {
-      const [items] = await db.promise().query('SELECT * FROM order_items WHERE order_id = ?', [order.id]);
+      const items = await dbQuery('SELECT * FROM order_items WHERE order_id = ?', [order.id]);
       order.orderItems      = items;
       order.total           = parseFloat(order.total_amount);
       order.paymentMethod   = order.payment_method || 'cod';
@@ -455,18 +453,18 @@ app.get('/admin/logout', (req, res) => { req.session.admin = null; res.redirect(
 
 app.get('/admin/dashboard', requireAdmin, async (req, res) => {
   try {
-    const [[{ totalOrders }]]  = await db.promise().query('SELECT COUNT(*) as totalOrders FROM orders');
-    const [[{ totalRevenue }]] = await db.promise().query('SELECT COALESCE(SUM(total_amount),0) as totalRevenue FROM orders');
-    const [[{ totalCustomers }]] = await db.promise().query('SELECT COUNT(*) as totalCustomers FROM users');
-    const [[{ totalProducts }]]  = await db.promise().query('SELECT COUNT(*) as totalProducts FROM products');
-    const [[{ pendingOrders }]]  = await db.promise().query("SELECT COUNT(*) as pendingOrders FROM orders WHERE status='pending'");
-    const [recentOrders] = await db.promise().query('SELECT * FROM orders ORDER BY created_at DESC LIMIT 5');
+    const _to = await dbQuery('SELECT COUNT(*) as totalOrders FROM orders'); const totalOrders = _to?.[0]?.totalOrders ?? 0;
+    const _tr = await dbQuery('SELECT COALESCE(SUM(total_amount),0) as totalRevenue FROM orders'); const totalRevenue = _tr?.[0]?.totalRevenue ?? 0;
+    const _tc = await dbQuery('SELECT COUNT(*) as totalCustomers FROM users'); const totalCustomers = _tc?.[0]?.totalCustomers ?? 0;
+    const _tp = await dbQuery('SELECT COUNT(*) as totalProducts FROM products'); const totalProducts = _tp?.[0]?.totalProducts ?? 0;
+    const _po = await dbQuery("SELECT COUNT(*) as pendingOrders FROM orders WHERE status='pending'"); const pendingOrders = _po?.[0]?.pendingOrders ?? 0;
+    const recentOrders = await dbQuery('SELECT * FROM orders ORDER BY created_at DESC LIMIT 5');
     for (const o of recentOrders) {
       o.total = parseFloat(o.total_amount);
       o.customerName = o.customer_name;
       o.date = o.created_at;
       o.paymentMethod = o.payment_method;
-      const [[{ items }]] = await db.promise().query('SELECT COUNT(*) as items FROM order_items WHERE order_id = ?', [o.id]);
+      const _items = await dbQuery('SELECT COUNT(*) as items FROM order_items WHERE order_id = ?', [o.id]); const items = _items?.[0]?.items ?? 0;
       o.items = items;
     }
     res.render('admin-dashboard', {
@@ -481,10 +479,10 @@ app.get('/admin/dashboard', requireAdmin, async (req, res) => {
 
 app.get('/admin/orders', requireAdmin, async (req, res) => {
   try {
-    const [rows] = await db.promise().query('SELECT * FROM orders ORDER BY created_at DESC');
+    const rows = await dbQuery('SELECT * FROM orders ORDER BY created_at DESC');
     const orders = [];
     for (const o of rows) {
-      const [[{ items }]] = await db.promise().query('SELECT COUNT(*) as items FROM order_items WHERE order_id = ?', [o.id]);
+      const _items = await dbQuery('SELECT COUNT(*) as items FROM order_items WHERE order_id = ?', [o.id]); const items = _items?.[0]?.items ?? 0;
       orders.push({
         ...o,
         total         : parseFloat(o.total_amount),
@@ -503,9 +501,9 @@ app.get('/admin/orders', requireAdmin, async (req, res) => {
 
 app.get('/admin/orders/:id', requireAdmin, async (req, res) => {
   try {
-    const [[order]] = await db.promise().query('SELECT * FROM orders WHERE id = ?', [req.params.id]);
+    const _r_order = await dbQuery('SELECT * FROM orders WHERE id = ?', [req.params.id]); const order = _r_order?.[0];
     if (!order) return res.status(404).json({ error: 'Not found' });
-    const [orderItems] = await db.promise().query('SELECT * FROM order_items WHERE order_id = ?', [order.id]);
+    const orderItems = await dbQuery('SELECT * FROM order_items WHERE order_id = ?', [order.id]);
     res.json({ ...order, orderItems, total: parseFloat(order.total_amount), customerName: order.customer_name,
       shippingAddress: { address: order.address, city: order.city, state: order.state, pincode: order.pincode, landmark: order.landmark },
       paymentMethod: order.payment_method, subtotal: parseFloat(order.subtotal), tax: parseFloat(order.tax) });
@@ -517,21 +515,21 @@ app.post('/admin/orders/update-status', requireAdmin, async (req, res) => {
   const valid = ['pending','processing','shipped','delivered','cancelled'];
   if (!valid.includes(status)) return res.json({ success: false, message: 'Invalid status' });
   try {
-    await db.promise().query('UPDATE orders SET status = ? WHERE id = ?', [status, orderId]);
+    await dbQuery('UPDATE orders SET status = ? WHERE id = ?', [status, orderId]);
     res.json({ success: true, message: 'Status updated' });
   } catch (err) { res.json({ success: false, message: 'Update failed' }); }
 });
 
 app.get('/admin/products', requireAdmin, async (req, res) => {
   try {
-    const [products] = await db.promise().query('SELECT * FROM products ORDER BY id');
+    const products = await dbQuery('SELECT * FROM products ORDER BY id');
     res.render('admin-products', { products });
   } catch (err) { res.render('admin-products', { products: [] }); }
 });
 
 app.get('/admin/products/:id', requireAdmin, async (req, res) => {
   try {
-    const [[product]] = await db.promise().query('SELECT * FROM products WHERE id = ?', [req.params.id]);
+    const _r_product = await dbQuery('SELECT * FROM products WHERE id = ?', [req.params.id]); const product = _r_product?.[0];
     if (!product) return res.status(404).json({ error: 'Not found' });
     res.json(product);
   } catch (err) { res.status(500).json({ error: 'Server error' }); }
@@ -542,7 +540,7 @@ app.post('/admin/products/add', requireAdmin, async (req, res) => {
   if (!name || !price || !category || !description || !image)
     return res.json({ success: false, message: 'All fields are required' });
   try {
-    await db.promise().query('INSERT INTO products (name, price, category, description, image, stock) VALUES (?, ?, ?, ?, ?, ?)',
+    await dbQuery('INSERT INTO products (name, price, category, description, image, stock) VALUES (?, ?, ?, ?, ?, ?)',
       [name.trim(), parseFloat(price), category, description.trim(), image.trim(), parseInt(stock) || 100]);
     res.json({ success: true, message: 'Product added successfully' });
   } catch (err) { res.json({ success: false, message: 'Failed to add product' }); }
@@ -551,7 +549,7 @@ app.post('/admin/products/add', requireAdmin, async (req, res) => {
 app.post('/admin/products/update', requireAdmin, async (req, res) => {
   const { id, name, price, category, description, image, stock } = req.body;
   try {
-    await db.promise().query('UPDATE products SET name=?, price=?, category=?, description=?, image=?, stock=? WHERE id=?',
+    await dbQuery('UPDATE products SET name=?, price=?, category=?, description=?, image=?, stock=? WHERE id=?',
       [name.trim(), parseFloat(price), category, description.trim(), image.trim(), parseInt(stock) || 100, id]);
     res.json({ success: true, message: 'Product updated successfully' });
   } catch (err) { res.json({ success: false, message: 'Failed to update product' }); }
@@ -559,7 +557,7 @@ app.post('/admin/products/update', requireAdmin, async (req, res) => {
 
 app.post('/admin/products/delete', requireAdmin, async (req, res) => {
   try {
-    await db.promise().query('DELETE FROM products WHERE id = ?', [req.body.id]);
+    await dbQuery('DELETE FROM products WHERE id = ?', [req.body.id]);
     res.json({ success: true, message: 'Product deleted successfully' });
   } catch (err) { res.json({ success: false, message: 'Failed to delete product' }); }
 });
@@ -568,8 +566,8 @@ app.post('/admin/products/delete', requireAdmin, async (req, res) => {
 app.post('/admin/customers/delete', requireAdmin, async (req, res) => {
   const { id } = req.body;
   try {
-    await db.promise().query('DELETE FROM orders WHERE user_id = ?', [id]);
-    await db.promise().query('DELETE FROM users WHERE id = ?', [id]);
+    await dbQuery('DELETE FROM orders WHERE user_id = ?', [id]);
+    await dbQuery('DELETE FROM users WHERE id = ?', [id]);
     res.json({ success: true, message: 'User deleted successfully' });
   } catch (err) {
     res.json({ success: false, message: 'Failed to delete user' });
@@ -578,11 +576,11 @@ app.post('/admin/customers/delete', requireAdmin, async (req, res) => {
 
 app.get('/admin/customers', requireAdmin, async (req, res) => {
   try {
-    const [users] = await db.promise().query('SELECT id, name, email, created_at FROM users ORDER BY created_at DESC');
+    const users = await dbQuery('SELECT id, name, email, created_at FROM users ORDER BY created_at DESC');
     const customers = [];
     for (const u of users) {
-      const [[{ totalOrders }]] = await db.promise().query('SELECT COUNT(*) as totalOrders FROM orders WHERE user_id = ?', [u.id]);
-      const [[{ totalSpent }]]  = await db.promise().query('SELECT COALESCE(SUM(total_amount),0) as totalSpent FROM orders WHERE user_id = ?', [u.id]);
+      const _uo = await dbQuery('SELECT COUNT(*) as totalOrders FROM orders WHERE user_id = ?', [u.id]); const totalOrders = _uo?.[0]?.totalOrders ?? 0;
+      const _us = await dbQuery('SELECT COALESCE(SUM(total_amount),0) as totalSpent FROM orders WHERE user_id = ?', [u.id]); const totalSpent = _us?.[0]?.totalSpent ?? 0;
       customers.push({ ...u, totalOrders, totalSpent: parseFloat(totalSpent), registeredDate: u.created_at });
     }
     res.render('admin-customers', { customers });
