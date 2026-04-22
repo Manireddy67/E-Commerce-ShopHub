@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: shophub
+    env: node
+    rootDir: .
+    buildCommand: npm install
+    startCommand: node server.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: SESSION_SECRET
+        value: shophub-render-secret-2024

@@ -1,31 +1,36 @@
-const mysql = require("mysql2");
-
-// Use environment variables if available, otherwise use local defaults
-const dbConfig = {
-  host            : process.env.DB_HOST     || "localhost",
-  user            : process.env.DB_USER     || "root",
-  password        : process.env.DB_PASSWORD || "1422",
-  database        : process.env.DB_NAME     || "ecommerce_db",
-  waitForConnections: true,
-  connectionLimit : 10,
-  queueLimit      : 0
-};
+// db.js — Safe MySQL connection
+// Returns null if MySQL is not available (live server without DB)
+// Returns pool if MySQL is available (local development)
 
 let pool = null;
 
 try {
-  pool = mysql.createPool(dbConfig);
-  // Test connection silently
-  pool.query("SELECT 1", (err) => {
+  const mysql = require('mysql2');
+
+  pool = mysql.createPool({
+    host            : process.env.DB_HOST     || 'localhost',
+    user            : process.env.DB_USER     || 'root',
+    password        : process.env.DB_PASSWORD || '1422',
+    database        : process.env.DB_NAME     || 'ecommerce_db',
+    waitForConnections: true,
+    connectionLimit : 5,
+    queueLimit      : 0,
+    connectTimeout  : 5000,   // 5 second timeout
+    acquireTimeout  : 5000
+  });
+
+  // Test silently — don't crash if fails
+  pool.query('SELECT 1', (err) => {
     if (err) {
-      console.log("⚠️  MySQL not available:", err.code);
-      pool = null; // disable pool so fallback kicks in
+      console.log('⚠️  MySQL unavailable:', err.code, '— using file fallback');
+      pool = null;
     } else {
-      console.log("✅ Connected to MySQL database!");
+      console.log('✅ Connected to MySQL database!');
     }
   });
+
 } catch (e) {
-  console.log("⚠️  MySQL pool creation failed:", e.message);
+  console.log('⚠️  mysql2 error:', e.message, '— using file fallback');
   pool = null;
 }
 

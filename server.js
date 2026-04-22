@@ -30,7 +30,7 @@ try {
 async function dbQuery(sql, params = []) {
   if (!db) return null;
   try {
-    const rows = await dbQuery(sql, params);
+    const [rows] = await db.promise().query(sql, params);
     return rows;
   } catch (e) {
     console.error('DB query error:', e.message);
@@ -108,7 +108,7 @@ function getNextId(key) {
 }
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 
 // ============ MIDDLEWARE ============
 app.set('view engine', 'ejs');
@@ -116,7 +116,7 @@ app.use(express.static('public'));
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(bodyParser.json());
 app.use(session({
-  secret: 'shophub-secret-key-2024',
+  secret: process.env.SESSION_SECRET || 'shophub-secret-key-2024',
   resave: false,
   saveUninitialized: false,
   cookie: { maxAge: 24 * 60 * 60 * 1000 }
