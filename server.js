@@ -30,7 +30,7 @@ try {
 async function dbQuery(sql, params = []) {
   if (!db) return null;
   try {
-    const [rows] = await db.promise().query(sql, params);
+    const [rows] = await db.query(sql, params);
     return rows;
   } catch (e) {
     console.error('DB query error:', e.message);
@@ -119,7 +119,10 @@ app.use(session({
   secret: process.env.SESSION_SECRET || 'shophub-secret-key-2024',
   resave: false,
   saveUninitialized: false,
-  cookie: { maxAge: 24 * 60 * 60 * 1000 }
+  cookie: {
+    maxAge: 24 * 60 * 60 * 1000,
+    secure: process.env.NODE_ENV === 'production'
+  }
 }));
 
 function requireLogin(req, res, next) {
@@ -156,28 +159,26 @@ app.get('/product/:id', async (req, res) => {
   try {
     const product = await getProductById(req.params.id);
     if (!product) return res.redirect('/');
-    // Related products
+
+    // Related products — always use local fallback if DB unavailable
     let related = [];
-    if (db) {
-      try {
-        const rows = await dbQuery('SELECT * FROM products WHERE category = ? AND id != ? LIMIT 4', [product.category, product.id]);
-        related = rows;
-      } catch (e) {}
+    const dbRelated = await dbQuery('SELECT * FROM products WHERE category = ? AND id != ? LIMIT 4', [product.category, product.id]);
+    if (dbRelated && dbRelated.length) {
+      related = dbRelated;
+    } else {
+      related = localProducts.filter(p => p.category === product.category && p.id !== parseInt(product.id)).slice(0, 4);
     }
-    if (!related.length) {
-      related = localProducts.filter(p => p.category === product.category && p.id !== product.id).slice(0, 4);
-    }
+
     // Gallery images
     let gallery = [product.image];
-    if (db) {
-      try {
-        const galleryRows = await dbQuery('SELECT image_url FROM product_images WHERE product_id = ? ORDER BY sort_order', [product.id]);
-        if (galleryRows.length) gallery = [product.image, ...galleryRows.map(r => r.image_url)];
-      } catch (e) {}
+    const galleryRows = await dbQuery('SELECT image_url FROM product_images WHERE product_id = ? ORDER BY sort_order', [product.id]);
+    if (galleryRows && galleryRows.length) {
+      gallery = [product.image, ...galleryRows.map(r => r.image_url)];
     }
+
     res.render('product', { user: req.session.user, product, related, gallery });
   } catch (err) {
-    console.error(err);
+    console.error('Product page error:', err);
     res.redirect('/');
   }
 });
@@ -188,14 +189,14 @@ app.get('/cart', async (req, res) => {
     const cart = req.session.cart || [];
     const cartItems = [];
     for (const item of cart) {
-      const _r_p = await dbQuery('SELECT * FROM products WHERE id = ?', [item.id]); const p = _r_p?.[0];
-      if (p) cartItems.push({ ...p, quantity: item.quantity });
+      const product = await getProductById(item.id);
+      if (product) cartItems.push({ ...product, quantity: item.quantity });
     }
     const subtotal = cartItems.reduce((s, i) => s + i.price * i.quantity, 0);
     const shipping = subtotal > 999 ? 0 : 99;
     res.render('cart', { user: req.session.user, cartItems, subtotal, shipping, total: subtotal + shipping });
   } catch (err) {
-    console.error(err);
+    console.error('Cart error:', err);
     res.render('cart', { user: req.session.user, cartItems: [], subtotal: 0, shipping: 0, total: 0 });
   }
 });
@@ -228,8 +229,8 @@ app.post('/cart/update', async (req, res) => {
   const cart = req.session.cart || [];
   let subtotal = 0;
   for (const ci of cart) {
-    const _r_p = await dbQuery('SELECT price FROM products WHERE id = ?', [ci.id]); const p = _r_p?.[0];
-    if (p) subtotal += p.price * ci.quantity;
+    const product = await getProductById(ci.id);
+    if (product) subtotal += product.price * ci.quantity;
   }
   const shipping = subtotal > 999 ? 0 : 99;
   const cartCount = cart.reduce((s, i) => s + i.quantity, 0);
@@ -251,6 +252,23 @@ app.get('/api/search', async (req, res) => {
   } catch (err) { res.json([]); }
 });
 
+// In-memory user store for when DB and file system are both unavailable (Render)
+const memUsers = [];
+const memOrders = [];
+
+function getUsers() {
+  if (db) return null; // signal to use DB
+  try { return readJSON('users.json'); } catch (e) { return memUsers; }
+}
+
+function saveUsers(users) {
+  try { writeJSON('users.json', users); } catch (e) {
+    // file write failed (Render read-only) — keep in memory only
+    memUsers.length = 0;
+    users.forEach(u => memUsers.push(u));
+  }
+}
+
 // Auth
 app.get('/login', (req, res) => {
   if (req.session.user) return res.redirect('/');
@@ -263,11 +281,11 @@ app.post('/login', async (req, res) => {
   try {
     let user = null;
     if (db) {
-      const _ur = await dbQuery('SELECT * FROM users WHERE email = ?', [email.toLowerCase().trim()]);
-      user = row;
+      const rows = await dbQuery('SELECT * FROM users WHERE email = ?', [email.toLowerCase().trim()]);
+      user = rows?.[0] || null;
     } else {
-      const users = readJSON('users.json');
-      user = users.find(u => u.email === email.toLowerCase().trim());
+      const users = getUsers() || memUsers;
+      user = users.find(u => u.email === email.toLowerCase().trim()) || null;
     }
     if (!user) return res.render('login', { user: null, error: 'Invalid email or password' });
     const match = await bcrypt.compare(password, user.password);
@@ -275,7 +293,7 @@ app.post('/login', async (req, res) => {
     req.session.user = { id: user.id, email: user.email, name: user.name };
     res.redirect('/');
   } catch (err) {
-    console.error(err);
+    console.error('Login error:', err);
     res.render('login', { user: null, error: 'Something went wrong. Try again.' });
   }
 });
@@ -297,21 +315,22 @@ app.post('/register', async (req, res) => {
     const cleanName = name.trim();
 
     if (db) {
-      const _r_existing = await dbQuery('SELECT id FROM users WHERE email = ?', [cleanEmail]); const existing = _r_existing?.[0];
-      if (existing) return res.render('register', { user: null, error: 'Email already registered' });
+      const existing = await dbQuery('SELECT id FROM users WHERE email = ?', [cleanEmail]);
+      if (existing?.[0]) return res.render('register', { user: null, error: 'Email already registered' });
       const result = await dbQuery('INSERT INTO users (name, email, password) VALUES (?, ?, ?)', [cleanName, cleanEmail, hashed]);
-      req.session.user = { id: result.insertId, email: cleanEmail, name: cleanName };
+      req.session.user = { id: result?.insertId || Date.now(), email: cleanEmail, name: cleanName };
     } else {
-      const users = readJSON('users.json');
+      const users = getUsers() || memUsers;
       if (users.find(u => u.email === cleanEmail)) return res.render('register', { user: null, error: 'Email already registered' });
-      const newUser = { id: getNextId('users'), name: cleanName, email: cleanEmail, password: hashed, created_at: new Date().toISOString() };
+      const newId = (users.length > 0 ? Math.max(...users.map(u => u.id || 0)) : 0) + 1;
+      const newUser = { id: newId, name: cleanName, email: cleanEmail, password: hashed, created_at: new Date().toISOString() };
       users.push(newUser);
-      writeJSON('users.json', users);
+      saveUsers(users);
       req.session.user = { id: newUser.id, email: cleanEmail, name: cleanName };
     }
     res.redirect('/');
   } catch (err) {
-    console.error(err);
+    console.error('Register error:', err);
     res.render('register', { user: null, error: 'Registration failed. Try again.' });
   }
 });
@@ -325,15 +344,15 @@ app.get('/checkout', requireLogin, async (req, res) => {
     if (!cart.length) return res.redirect('/cart');
     const cartItems = [];
     for (const item of cart) {
-      const _r_p = await dbQuery('SELECT * FROM products WHERE id = ?', [item.id]); const p = _r_p?.[0];
-      if (p) cartItems.push({ ...p, quantity: item.quantity });
+      const product = await getProductById(item.id);
+      if (product) cartItems.push({ ...product, quantity: item.quantity });
     }
     const subtotal = cartItems.reduce((s, i) => s + i.price * i.quantity, 0);
     const shipping = subtotal > 999 ? 0 : 99;
     const tax = Math.round(subtotal * 0.18);
     res.render('checkout', { user: req.session.user, cartItems, subtotal, shipping, tax, total: subtotal + shipping + tax });
   } catch (err) {
-    console.error(err);
+    console.error('Checkout GET error:', err);
     res.redirect('/cart');
   }
 });
@@ -350,33 +369,54 @@ app.post('/checkout', requireLogin, async (req, res) => {
   try {
     const cartItems = [];
     for (const item of cart) {
-      const _r_p = await dbQuery('SELECT * FROM products WHERE id = ?', [item.id]); const p = _r_p?.[0];
-      if (p) cartItems.push({ ...p, quantity: item.quantity });
+      const product = await getProductById(item.id);
+      if (product) cartItems.push({ ...product, quantity: item.quantity });
     }
     const subtotal = cartItems.reduce((s, i) => s + i.price * i.quantity, 0);
     const shipping = subtotal > 999 ? 0 : 99;
     const tax = Math.round(subtotal * 0.18);
     const total = subtotal + shipping + tax;
 
-    const orderResult = await dbQuery(
-      `INSERT INTO orders (user_id, customer_name, email, phone, address, city, state, pincode, landmark, subtotal, shipping, tax, total_amount, payment_method, payment_ref, status)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
-      [req.session.user.id, `${firstName} ${lastName}`, email || req.session.user.email,
-       phone, address, city, state, pincode, landmark || '',
-       subtotal, shipping, tax, total, paymentMethod || 'cod', paymentRef || null]
-    );
-    const orderId = orderResult.insertId;
+    let orderId;
 
-    for (const item of cartItems) {
-      await dbQuery(
-        'INSERT INTO order_items (order_id, product_id, name, image, price, quantity) VALUES (?, ?, ?, ?, ?, ?)',
-        [orderId, item.id, item.name, item.image, item.price, item.quantity]
+    if (db) {
+      const result = await dbQuery(
+        `INSERT INTO orders (user_id, customer_name, email, phone, address, city, state, pincode, landmark, subtotal, shipping, tax, total_amount, payment_method, payment_ref, status)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
+        [req.session.user.id, `${firstName} ${lastName}`, email || req.session.user.email,
+         phone, address, city, state, pincode, landmark || '',
+         subtotal, shipping, tax, total, paymentMethod || 'cod', paymentRef || null]
       );
+      orderId = result?.insertId;
+      for (const item of cartItems) {
+        await dbQuery(
+          'INSERT INTO order_items (order_id, product_id, name, image, price, quantity) VALUES (?, ?, ?, ?, ?, ?)',
+          [orderId, item.id, item.name, item.image, item.price, item.quantity]
+        );
+      }
+    } else {
+      // Fallback: save to JSON or memory
+      const orders = readJSON('orders.json') || memOrders;
+      orderId = (orders.length > 0 ? Math.max(...orders.map(o => o.id || 0)) : 0) + 1;
+      const newOrder = {
+        id: orderId, userId: req.session.user.id,
+        customerName: `${firstName} ${lastName}`,
+        email: email || req.session.user.email, phone,
+        address, city, state, pincode, landmark: landmark || '',
+        orderItems: cartItems, subtotal, shipping, tax, total,
+        paymentMethod: paymentMethod || 'cod', paymentRef: paymentRef || null,
+        status: 'pending', createdAt: new Date().toISOString()
+      };
+      orders.push(newOrder);
+      try { writeJSON('orders.json', orders); } catch (e) { memOrders.push(newOrder); }
+      // Store in session for confirmation page
+      req.session.lastOrder = newOrder;
     }
+
     req.session.cart = [];
     res.json({ success: true, message: 'Order placed!', orderId });
   } catch (err) {
-    console.error(err);
+    console.error('Checkout error:', err);
     res.json({ success: false, message: 'Order failed. Please try again.' });
   }
 });
@@ -384,31 +424,46 @@ app.post('/checkout', requireLogin, async (req, res) => {
 // Order Confirmation
 app.get('/order-confirmation/:id', requireLogin, async (req, res) => {
   try {
-    const _r_order = await dbQuery('SELECT * FROM orders WHERE id = ? AND user_id = ?', [req.params.id, req.session.user.id]); const order = _r_order?.[0];
-    if (!order) return res.redirect('/');
-    const orderItems = await dbQuery('SELECT * FROM order_items WHERE order_id = ?', [order.id]);
+    let order = null;
 
-    // Map DB snake_case → camelCase for the view
-    order.orderItems      = orderItems;
-    order.customerName    = order.customer_name;
-    order.paymentMethod   = order.payment_method  || 'cod';
-    order.paymentRef      = order.payment_ref      || null;
-    order.total           = parseFloat(order.total_amount);
-    order.subtotal        = parseFloat(order.subtotal)  || order.total;
-    order.shipping        = parseFloat(order.shipping)  || 0;
-    order.tax             = parseFloat(order.tax)       || 0;
-    order.date            = order.created_at;
-    order.shippingAddress = {
-      address  : order.address,
-      city     : order.city,
-      state    : order.state,
-      pincode  : order.pincode,
-      landmark : order.landmark || ''
+    if (db) {
+      const rows = await dbQuery('SELECT * FROM orders WHERE id = ? AND user_id = ?', [req.params.id, req.session.user.id]);
+      order = rows?.[0] || null;
+      if (order) {
+        const items = await dbQuery('SELECT * FROM order_items WHERE order_id = ?', [order.id]);
+        order.orderItems = items || [];
+      }
+    }
+
+    // Fallback: check session or JSON
+    if (!order) {
+      if (req.session.lastOrder && String(req.session.lastOrder.id) === String(req.params.id)) {
+        order = req.session.lastOrder;
+      } else {
+        const orders = readJSON('orders.json') || memOrders;
+        order = orders.find(o => String(o.id) === String(req.params.id) && o.userId === req.session.user.id) || null;
+      }
+    }
+
+    if (!order) return res.redirect('/');
+
+    // Normalize fields
+    order.orderItems    = order.orderItems || [];
+    order.customerName  = order.customerName  || order.customer_name  || req.session.user.name;
+    order.paymentMethod = order.paymentMethod || order.payment_method || 'cod';
+    order.total         = parseFloat(order.total || order.total_amount || 0);
+    order.subtotal      = parseFloat(order.subtotal || order.total);
+    order.shipping      = parseFloat(order.shipping || 0);
+    order.tax           = parseFloat(order.tax || 0);
+    order.date          = order.date || order.created_at || order.createdAt || new Date();
+    order.shippingAddress = order.shippingAddress || {
+      address: order.address, city: order.city,
+      state: order.state, pincode: order.pincode, landmark: order.landmark || ''
     };
 
     res.render('order-confirmation', { user: req.session.user, order });
   } catch (err) {
-    console.error(err);
+    console.error('Order confirmation error:', err);
     res.redirect('/');
   }
 });
@@ -416,18 +471,36 @@ app.get('/order-confirmation/:id', requireLogin, async (req, res) => {
 // My Orders
 app.get('/my-orders', requireLogin, async (req, res) => {
   try {
-    const orders = await dbQuery('SELECT * FROM orders WHERE user_id = ? ORDER BY created_at DESC', [req.session.user.id]);
-    for (const order of orders) {
-      const items = await dbQuery('SELECT * FROM order_items WHERE order_id = ?', [order.id]);
-      order.orderItems      = items;
-      order.total           = parseFloat(order.total_amount);
-      order.paymentMethod   = order.payment_method || 'cod';
-      order.shippingAddress = { city: order.city, state: order.state };
-      order.date            = order.created_at;
+    let orders = [];
+
+    if (db) {
+      const rows = await dbQuery('SELECT * FROM orders WHERE user_id = ? ORDER BY created_at DESC', [req.session.user.id]);
+      orders = rows || [];
+      for (const order of orders) {
+        const items = await dbQuery('SELECT * FROM order_items WHERE order_id = ?', [order.id]);
+        order.orderItems      = items || [];
+        order.total           = parseFloat(order.total_amount);
+        order.paymentMethod   = order.payment_method || 'cod';
+        order.shippingAddress = { city: order.city, state: order.state };
+        order.date            = order.created_at;
+      }
+    } else {
+      const allOrders = readJSON('orders.json') || memOrders;
+      orders = allOrders
+        .filter(o => o.userId === req.session.user.id)
+        .reverse()
+        .map(o => ({
+          ...o,
+          total: parseFloat(o.total || 0),
+          paymentMethod: o.paymentMethod || 'cod',
+          shippingAddress: o.shippingAddress || { city: o.city || '', state: o.state || '' },
+          date: o.date || o.createdAt || new Date()
+        }));
     }
+
     res.render('my-orders', { user: req.session.user, orders });
   } catch (err) {
-    console.error(err);
+    console.error('My orders error:', err);
     res.render('my-orders', { user: req.session.user, orders: [] });
   }
 });
