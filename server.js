@@ -158,7 +158,7 @@ app.get('/product/:id', async (req, res) => {
     if (!product) return res.redirect('/');
     // Related products
     let related = [];
-    if (dbAvailable && db) {
+    if (db) {
       try {
         const rows = await dbQuery('SELECT * FROM products WHERE category = ? AND id != ? LIMIT 4', [product.category, product.id]);
         related = rows;
@@ -169,7 +169,7 @@ app.get('/product/:id', async (req, res) => {
     }
     // Gallery images
     let gallery = [product.image];
-    if (dbAvailable && db) {
+    if (db) {
       try {
         const galleryRows = await dbQuery('SELECT image_url FROM product_images WHERE product_id = ? ORDER BY sort_order', [product.id]);
         if (galleryRows.length) gallery = [product.image, ...galleryRows.map(r => r.image_url)];
@@ -262,7 +262,7 @@ app.post('/login', async (req, res) => {
   if (!email || !password) return res.render('login', { user: null, error: 'Email and password are required' });
   try {
     let user = null;
-    if (dbAvailable && db) {
+    if (db) {
       const _ur = await dbQuery('SELECT * FROM users WHERE email = ?', [email.toLowerCase().trim()]);
       user = row;
     } else {
@@ -296,7 +296,7 @@ app.post('/register', async (req, res) => {
     const cleanEmail = email.toLowerCase().trim();
     const cleanName = name.trim();
 
-    if (dbAvailable && db) {
+    if (db) {
       const _r_existing = await dbQuery('SELECT id FROM users WHERE email = ?', [cleanEmail]); const existing = _r_existing?.[0];
       if (existing) return res.render('register', { user: null, error: 'Email already registered' });
       const result = await dbQuery('INSERT INTO users (name, email, password) VALUES (?, ?, ?)', [cleanName, cleanEmail, hashed]);
