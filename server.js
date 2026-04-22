@@ -16,11 +16,23 @@ try {
 
 // ── DB setup (optional — falls back gracefully) ───────────────
 let db = null;
+let dbReady = false;
+
 try {
   const pool = require('./db');
   if (pool) {
     db = pool;
-    console.log('🗄️  MySQL pool created');
+    // Test connection — mark ready only after confirmed
+    pool.query('SELECT 1')
+      .then(() => {
+        dbReady = true;
+        console.log('🗄️  MySQL ready');
+      })
+      .catch((err) => {
+        console.log('⚠️  MySQL test failed:', err.code, '— file fallback active');
+        db = null;
+        dbReady = false;
+      });
   }
 } catch (e) {
   console.log('⚠️  MySQL not available, using file-based fallback');
@@ -160,7 +172,7 @@ app.get('/product/:id', async (req, res) => {
     const product = await getProductById(req.params.id);
     if (!product) return res.redirect('/');
 
-    // Related products — always use local fallback if DB unavailable
+    // Related products
     let related = [];
     const dbRelated = await dbQuery('SELECT * FROM products WHERE category = ? AND id != ? LIMIT 4', [product.category, product.id]);
     if (dbRelated && dbRelated.length) {
@@ -169,11 +181,13 @@ app.get('/product/:id', async (req, res) => {
       related = localProducts.filter(p => p.category === product.category && p.id !== parseInt(product.id)).slice(0, 4);
     }
 
-    // Gallery images
+    // Gallery — use DB table if available, else use gallery[] from products.js
     let gallery = [product.image];
-    const galleryRows = await dbQuery('SELECT image_url FROM product_images WHERE product_id = ? ORDER BY sort_order', [product.id]);
-    if (galleryRows && galleryRows.length) {
-      gallery = [product.image, ...galleryRows.map(r => r.image_url)];
+    const dbGallery = await dbQuery('SELECT image_url FROM product_images WHERE product_id = ? ORDER BY sort_order', [product.id]);
+    if (dbGallery && dbGallery.length) {
+      gallery = [product.image, ...dbGallery.map(r => r.image_url)];
+    } else if (product.gallery && product.gallery.length) {
+      gallery = [product.image, ...product.gallery];
     }
 
     res.render('product', { user: req.session.user, product, related, gallery });
